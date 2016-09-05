@@ -1,0 +1,11 @@
+	<tra:TrafficArea xmlns:tra="http://www.opengis.net/citygml/transportation/2.0" gml:id="_{{_version}}">
+		<tra:function codeSpace="{{functie_codeSpace}}">{{functie}}</tra:function>
+		<tra:surfaceMaterial codeSpace="{{fysiekVoorkomen_codeSpace}}">{{fysiekVoorkomen}}</tra:surfaceMaterial>
+		<imgeo:inOnderzoek>{{inOnderzoek}}</imgeo:inOnderzoek>
+		<imgeo:kruinlijnWegdeel{{#kruinlijn_leeg}} nilReason="{{.}}"{{/kruinlijn_leeg}}>{{{kruinlijn.geometry.gml}}}</imgeo:kruinlijnWegdeel>
+		<imgeo:lokaalId>{{lokaalID}}</lokaaldId>
+		<imgeo:geometrie2dWegdeel>{{{geometry.gml}}}</imgeo:geometrie2dWegdeel>
+		<imgeo:wegdeelOpTalud{{#opTalud_leeg}} nilReason="{{.}}"{{/opTalud_leeg}}>{{opTalud}}</imgeo:wegdeelOpTalud>			
+		<imgeo:plus-fysiekVoorkomenWegdeel codeSpace="{{fysiekVoorkomen_codeSpace}}">{{plus-fysiekVoorkomen}}{{plus-fysiekVoorkomen_leeg}}</imgeo:plus-fysiekVoorkomenWegdeel>
+		<imgeo:plus-functieWegdeel codeSpace="{{plus-functie_codeSpace}}">{{plus-functie}}{{plus-functie_leeg}}</imgeo:plus-functieWegdeel>
+	</tra:TrafficArea>
