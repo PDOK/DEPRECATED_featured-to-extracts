@@ -3,7 +3,9 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             clojure.stacktrace
-            [environ.core :as environ]))
+            [environ.core :as environ])
+  (:import (java.io Reader)
+           (java.util Properties)))
 
 (Thread/setDefaultUncaughtExceptionHandler
   (reify Thread$UncaughtExceptionHandler
@@ -18,8 +20,8 @@
       (keyword)))
 
 (defn load-props [resource-file]
-  (with-open [^java.io.Reader reader (io/reader (io/resource resource-file))]
-    (let [props (java.util.Properties.)
+  (with-open [^Reader reader (io/reader (io/resource resource-file))]
+    (let [props (Properties.)
           _ (.load props reader)]
       (into {} (for [[k v] props
                      ;; no mustaches, for local use
@@ -34,7 +36,8 @@
                   :subname (or (env :database-url) "//localhost:5432/pdok")
                   :user (or (env :database-user) "postgres")
                   :password (or (env :database-password) "postgres")
-                  :transaction? true})
+                  :transaction? true
+                  :schema (or (env :extracts-schema) "extractmanagement")})
 
 (defn create-workers [factory-f]
   (let [n-workers (read-string (or (env :n-workers) "2"))]

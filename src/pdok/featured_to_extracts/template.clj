@@ -2,7 +2,8 @@
   (:require [pdok.featured-to-extracts.mustache :as m]
             [clojure.java.io :as io]
             [clojure.string :as s]
-            [clojure.tools.logging :as log]))
+            [clojure.tools.logging :as log])
+  (:import (java.io File)))
 
 
 (defn- template-qualifier [dataset extract-type]
@@ -11,7 +12,7 @@
 (defn template-key [dataset extract-type name]
   (str (template-qualifier dataset extract-type) name))
 
-(defn- template-with-metadata* [dataset ^java.io.File file]
+(defn- template-with-metadata* [dataset ^File file]
   (let [file-name (.getName file)]
     {:dataset dataset
      :extract-type (cond-> file
@@ -24,7 +25,7 @@
 (defn templates-with-metadata [dataset template-location]
   "Returns the template-contents with metadata included.
    The metadata is based on dataset and where template-file in directory structure is located."
-  (let [template-files (filter (fn [^java.io.File f] (.isFile f)) (file-seq (io/file template-location)))]
+  (let [template-files (filter (fn [^File f] (.isFile f)) (file-seq (io/file template-location)))]
     (map (partial template-with-metadata* dataset) template-files)))
 
 (defn- normalize [source]

@@ -3,7 +3,9 @@
             [stencil.loader :as loader]
             [pdok.featured-to-extracts.mustache-functions]
             [clojure.tools.logging :as log])
-  (:gen-class))
+  (:gen-class)
+  (:import (pdok.featured NilAttribute)
+           (clojure.lang ILookup IPersistentCollection Associative Sequential)))
 
 (defn resolve-as-function [namespace function]
   (ns-resolve *ns* (symbol (str namespace "/" (name function)))))
@@ -20,19 +22,19 @@
     (mustache-proxy k (f obj))
     (if (and (map? obj) (or (contains? obj k) (contains? obj (name k))))
       (let [value (get obj k (get obj (name k)))]
-        (if (or (= (class value) pdok.featured.NilAttribute) (= value nil))
+        (if (or (= (class value) NilAttribute) (= value nil))
           nil
           (mustache-proxy k value))))))
 
 (defn lookup-proxy [obj]
   (reify
-    clojure.lang.ILookup
+    ILookup
     (valAt [_ k] (val-at k nil))
     (valAt [_ k not-found] (if-let [v (val-at k obj)] v not-found))
-    clojure.lang.IPersistentCollection
+    IPersistentCollection
     (cons [_ o](lookup-proxy (conj obj o)))
     (seq [this] (if-not (clojure.string/blank? (str obj)) (list obj) nil))
-    clojure.lang.Associative
+    Associative
     (containsKey [_ key] (if (val-at key obj) true false))
     Object
     (toString [_] (str obj))))
@@ -42,10 +44,10 @@
 
 (defn collection-proxy [k obj]
   (reify
-    clojure.lang.Sequential
-    clojure.lang.ILookup
+    Sequential
+    ILookup
     (valAt [_ k] (val-at k obj))
-    clojure.lang.IPersistentCollection
+    IPersistentCollection
     (cons [_ o](mustache-proxy k (conj obj o)))
     (seq [this]
       (if (or (map? obj) (string? obj))

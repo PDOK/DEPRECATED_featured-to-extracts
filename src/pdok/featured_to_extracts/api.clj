@@ -3,7 +3,8 @@
              [config :as config]
              [core :as core]
              [mustache :as mustache]
-             [template :as template]]
+             [template :as template]
+             [zipfiles :as zipfiles]]
             [org.httpkit.client :as http]
             [cheshire.core :as json]
             [clj-time [core :as t] [local :as tl]]
@@ -42,7 +43,7 @@
 (def ExtractRequest
   "A schema for a JSON extract request"
   {:dataset                   s/Str
-   :file                      URI
+   :changeLogs                [URI]
    (s/optional-key :format)   (s/enum "csv" "zip")
    :extractTypes              [s/Str]
    (s/optional-key :callback) URI})
@@ -88,8 +89,8 @@
   (swap! stats update-in [:queued] pop)
   (let [dataset (:dataset request)
         extract-types (:extractTypes request)
-        zipped? (= (:format request) "zip")
-        [file err] (download-file (:file request) zipped?)]
+        zipped? (if (nil? (:format request)) true (= (:format request) "zip"))
+        [file err] (download-file (first (:changeLogs request)) zipped?)]
     (if-not file
       (do
         (swap! stats assoc-in [:processing worker-id] nil)
@@ -98,7 +99,7 @@
                                           (if err err "Something went wrong downloading"))))
       (try
         (with-open [in (io/input-stream file)]
-          (let [_ (log/info "Processing file:" (:file request))
+          (let [_ (log/info "Processing file:" (first (:changeLogs request)))
                 result (core/update-extracts dataset extract-types in)
                 run-stats (merge request result)]
             (swap! stats assoc-in [:processing worker-id] nil)

@@ -4,9 +4,8 @@
             [pdok.featured-to-extracts.config :as config]
             [pdok.featured-to-extracts.mustache :as m]
             [pdok.featured-to-extracts.template :as template]
+            [pdok.postgres :as pg]
             [clojure.tools.logging :as log]
-            [clojure.core.async :as a
-             :refer [>! <! >!! <!! go chan]]
             [clojure.string :as str]
             [clojure.java.io :as io]
             [clj-time [coerce :as tc] [format :as tf]])
@@ -30,7 +29,7 @@
     (let [qualified-table (str extract-schema "." table)
           query (str "INSERT INTO " qualified-table
                      " (feature_type, version, valid_from, valid_to, publication, tiles, xml) VALUES (?, ?, ?, ?, ?, ?, ?)")]
-      (try (j/execute! db (cons query entries) :multi? true :transaction? (:transaction? db))
+      (try (j/execute! db (cons query entries) {:multi? true :transaction? (:transaction? db)})
            (catch SQLException e
              (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
              (throw e))))))
@@ -97,18 +96,19 @@
 (defn- jdbc-delete-versions [db table versions]
   "([version valid_from][version valid_from] ... )"
   (let [versions-only (map #(take 1 %) (filter (fn [[_ valid-from]] (not valid-from)) versions))
-        with-valid-from (filter (fn [[_ valid-from]] valid-from) versions)]
+        with-valid-from (map (fn [[ov vf]] [ov vf ov vf]) (filter (fn [[_ valid-from]] valid-from) versions))]
     (when (seq versions-only)
       (let [query (str "DELETE FROM " extract-schema "." table
                        " WHERE version = ?")]
-        (try (j/execute! db (cons query versions-only) :multi? true :transaction? (:transaction? db))
+        (try (j/execute! db (cons query versions-only) {:multi? true :transaction? (:transaction? db)})
              (catch SQLException e
                (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
                (throw e)))))
     (when (seq with-valid-from)
       (let [query (str "DELETE FROM " extract-schema "." table
-                       " WHERE version = ? AND valid_from = ?")]
-        (try (j/execute! db (cons query with-valid-from) :multi? true :transaction? (:transaction? db))
+                       " WHERE version = ? AND valid_from = ? AND id IN (SELECT id FROM " extract-schema "." table
+                       " WHERE version = ? AND valid_from = ? ORDER BY id ASC LIMIT 1)")]
+        (try (j/execute! db (cons query with-valid-from) {:multi? true :transaction? (:transaction? db)})
              (catch SQLException e
                (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
                (throw e)))))))
@@ -141,15 +141,16 @@
     (log/info "Creating extracts for" dataset collection extract-types )
     (doseq [extract-type extract-types]
       (loop [i 1
-             records (first parts)]
-        (when records
-          (*process-insert-extract* dataset collection extract-type
-                                    (filter (complement nil?) (map changelog->change-inserts records)))
-          (*process-delete-extract* dataset collection extract-type
-                                    (filter (complement nil?) (map changelog->deletes records)))
-          (if (= 0 (mod i 10))
-            (log/info "Creating extracts, processed:" (* i batch-size)))
-          (recur (inc i) (rest parts)))))
+             remaining parts]
+        (let [records (first remaining)]
+          (when records
+            (*process-insert-extract* dataset collection extract-type
+                                      (filter (complement nil?) (map changelog->change-inserts records)))
+            (*process-delete-extract* dataset collection extract-type
+                                      (filter (complement nil?) (map changelog->deletes records)))
+            (if (= 0 (mod i 10))
+              (log/info "Creating extracts, processed:" (* i batch-size)))
+            (recur (inc i) (rest remaining))))))
     (log/info "Finished " dataset collection extract-types)))
 
 (def date-time-formatter (tf/formatters :date-time-parser) )
@@ -161,33 +162,37 @@
 
 (defn make-change-record [csv-line]
   (let [columns (str/split csv-line #",")]
-    {:feature-id     (nth columns 0)
-     :action         (keyword (nth columns 1))
-     :version        (nth columns 2)
-     :tiles          (nth columns 3)
-     :valid-from     (parse-time (nth columns 4))
-     :old-version    (nth columns 5)
-     :old-tiles      (nth columns 6)
-     :old-valid-from (parse-time (nth columns 7))
-     :feature        (t/from-json (nth columns 8))}))
+    (merge {:action     (keyword (nth columns 0))
+            :feature-id (nth columns 1)
+            :version    (nth columns 2)}
+           (case (nth columns 0)
+             "delete" {}
+             "new" {:feature (t/from-json (str/join "," (drop 3 columns)))}
+             "close" {:feature (t/from-json (str/join "," (drop 3 columns)))}
+             "change" {:old-version (nth columns 2)
+                       :version     (nth columns 3)
+                       :feature     (t/from-json (str/join "," (drop 5 columns)))}))))
 
 (defn parse-changelog [in-stream]
   "Returns [dataset collection change-record], Where every line is a map with
   keys: feature-id,action,version,tiles,valid-from,old-version,old-tiles,old-valid-from,feature"
   (let [lines (line-seq (io/reader in-stream))
-        [dataset collection] (str/split (first lines) #",")
+        version (first lines)
+        [dataset collection] (str/split (second lines) #",")
         ;drop collection info + header
         lines (drop 2 lines)]
-    [dataset collection (map make-change-record lines)]))
+    [version dataset collection (map make-change-record lines)]))
 
 (defn update-extracts [dataset extract-types changelog-stream]
-  (let [[changelog-dataset collection changes] (parse-changelog changelog-stream)]
-    (if-not (every? *initialized-collection?* (map #(template/template-key dataset % collection) extract-types))
-      {:status "error" :msg "missing template(s)" :collection collection :extract-types extract-types}
-      (do
-        (when (seq changes)
-          (process-changes dataset collection extract-types changes))
-        {:status "ok" :collection collection}))))
+  (let [[version changelog-dataset collection changes] (parse-changelog changelog-stream)]
+    (if-not (= version "v1")
+      {:status "error" :msg (str "unknown changelog version" version)}
+      (if-not (every? *initialized-collection?* (map #(template/template-key dataset % collection) extract-types))
+        {:status "error" :msg "missing template(s)" :collection collection :extract-types extract-types}
+        (do
+          (when (seq? changes)
+            (process-changes dataset collection extract-types changes))
+          {:status "ok" :collection collection})))))
 
 (defn -main [template-location dataset extract-type & more]
   (let [templates-with-metadata (template/templates-with-metadata dataset template-location)]
