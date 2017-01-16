@@ -1,0 +1,4 @@
+v1
+regression-set,col-1
+new,id-a,00000000-0000-0000-0000-000000000000,["^ ","~:_collection","col-1","~:_id","id-a","~:_geometry",["~#ga",["gml","<?xml version=\"1.0\" encoding=\"UTF-8\"?><gml:Point xmlns:gml=\"http://www.opengis.net/gml\"><gml:pos>154742.108 464096.362</gml:pos></gml:Point>",null,null]],"~:b","first","~:_version","~u00000000-0000-0000-0000-000000000000","~:_all_versions",["~#list",["~u00000000-0000-0000-0000-000000000000"]],"~:_tiles",["~#set",["~I38261"]],"~:_valid_from",["~#lm",1454320800000]]
+delete,id-a,00000000-0000-0000-0000-000000000000
