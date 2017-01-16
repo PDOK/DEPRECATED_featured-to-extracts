@@ -10,7 +10,8 @@
             [clojure.java.io :as io]
             [clj-time [coerce :as tc] [format :as tf]])
   (:gen-class)
-  (:import (java.sql SQLException)))
+  (:import (java.sql SQLException)
+           (java.util UUID)))
 
 (def ^{:private true } extract-schema (:schema config/db))
 (def ^{:private true } extractset-table (str extract-schema ".extractset"))
@@ -127,8 +128,8 @@
 (defn changelog->deletes [record]
   (condp = (:action record)
     :delete [(:version record)]
-    :change [(:old-version record) (:valid-from record)]
-    :close [(:old-version record) (:valid-from record)]
+    :change [(:old-version record) (:_valid_from (:feature record))]
+    :close [(:old-version record) (:_valid_from (:feature record))]
     nil))
 
 (def ^:dynamic *process-insert-extract* (partial transform-and-add-extract config/db))
@@ -161,17 +162,20 @@
     (tc/to-local-date-time (tf/parse date-time-formatter datetimestring))))
 
 (defn make-change-record [csv-line]
-  (let [columns (str/split csv-line #",")]
-    (merge {:action     (keyword (nth columns 0))
-            :feature-id (nth columns 1)
-            :version    (nth columns 2)}
-           (case (nth columns 0)
-             "delete" {}
-             "new" {:feature (t/from-json (str/join "," (drop 3 columns)))}
-             "close" {:feature (t/from-json (str/join "," (drop 3 columns)))}
-             "change" {:old-version (nth columns 2)
-                       :version     (nth columns 3)
-                       :feature     (t/from-json (str/join "," (drop 5 columns)))}))))
+  (let [columns (str/split csv-line #",")
+        action (keyword (nth columns 0))]
+    (merge {:action     action
+            :feature-id (nth columns 1)}
+           (case action
+             :delete {:version     (UUID/fromString (nth columns 2))}
+             :new    {:version     (UUID/fromString (nth columns 2))
+                      :feature     (t/from-json (str/join "," (drop 3 columns)))}
+             :close  {:old-version (UUID/fromString (nth columns 2))
+                      :version     (UUID/fromString (nth columns 3))
+                      :feature     (t/from-json (str/join "," (drop 4 columns)))}
+             :change {:old-version (UUID/fromString (nth columns 2))
+                      :version     (UUID/fromString (nth columns 3))
+                      :feature     (t/from-json (str/join "," (drop 4 columns)))}))))
 
 (defn parse-changelog [in-stream]
   "Returns [dataset collection change-record], Where every line is a map with
