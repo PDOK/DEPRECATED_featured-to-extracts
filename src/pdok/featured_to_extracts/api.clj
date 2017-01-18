@@ -43,7 +43,7 @@
 (def ExtractRequest
   "A schema for a JSON extract request"
   {:dataset                   s/Str
-   :changeLogs                [URI]
+   :changeLog                 URI
    (s/optional-key :format)   (s/enum "csv" "zip")
    :extractTypes              [s/Str]
    (s/optional-key :callback) URI})
@@ -90,7 +90,7 @@
   (let [dataset (:dataset request)
         extract-types (:extractTypes request)
         zipped? (if (nil? (:format request)) true (= (:format request) "zip"))
-        [file err] (download-file (first (:changeLogs request)) zipped?)]
+        [file err] (download-file (:changeLog request) zipped?)]
     (if-not file
       (do
         (swap! stats assoc-in [:processing worker-id] nil)
@@ -99,7 +99,7 @@
                                           (if err err "Something went wrong downloading"))))
       (try
         (with-open [in (io/input-stream file)]
-          (let [_ (log/info "Processing file:" (first (:changeLogs request)))
+          (let [_ (log/info "Processing file:" (:changeLog request))
                 result (core/update-extracts dataset extract-types in)
                 run-stats (merge request result)]
             (swap! stats assoc-in [:processing worker-id] nil)
