@@ -81,7 +81,7 @@
             [entry nil]))
         [tmp nil]))
     (catch Exception e
-      [nil (:cause e)])))
+      [nil e])))
 
 (defn process* [worker-id stats callback-chan request]
   (log/info "Processing extract: " request)
@@ -92,11 +92,11 @@
         zipped? (if (nil? (:format request)) true (= (:format request) "zip"))
         [file err] (download-file (:changeLog request) zipped?)]
     (if-not file
-      (do
+      (let [msg (if err (str err) "Something went wrong downloading")
+            error-stats (merge request {:status "error" :msg msg})]
+        (log/warn msg error-stats)
         (swap! stats assoc-in [:processing worker-id] nil)
-        (stats-on-callback callback-chan request
-                           (assoc request :error
-                                          (if err err "Something went wrong downloading"))))
+        (stats-on-callback callback-chan request error-stats))
       (try
         (with-open [in (io/input-stream file)]
           (let [_ (log/info "Processing file:" (:changeLog request))
@@ -105,7 +105,7 @@
             (swap! stats assoc-in [:processing worker-id] nil)
             (stats-on-callback callback-chan request run-stats)))
         (catch Exception e
-          (let [error-stats (assoc request :error (str e))]
+          (let [error-stats (merge request {:status "error" :msg (str e)})]
             (log/warn e error-stats)
             (swap! stats assoc-in [:processing worker-id] nil)
             (stats-on-callback callback-chan request error-stats)))
