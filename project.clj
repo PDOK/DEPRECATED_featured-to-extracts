@@ -35,7 +35,7 @@
                  [ring/ring-defaults "0.2.2"]
                  [ring/ring-json "0.4.0"]
                  [http-kit "2.2.0"]
-                 [nl.pdok/featured-shared "1.0-rc3"]]
+                 [nl.pdok/featured-shared "1.0-rc9"]]
   :plugins [[lein-ring "0.10.0" ]
             [lein-filegen "0.1.0-SNAPSHOT"]]
   :ring {:port 5000
@@ -44,7 +44,6 @@
          :uberwar-name ~uberwar-name}
   :main ^:skip-aot pdok.featured-to-extracts.cli
   :resource-paths ["config"]
-  :target-path "target/%s"
   :filegen [{:data ~(str version "(" git-ref ")")
              :template-fn #(str %1)
              :target "resources/version"}]
