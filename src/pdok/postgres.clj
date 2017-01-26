@@ -7,9 +7,12 @@
   (:import [com.vividsolutions.jts.io WKTWriter]
            [java.util Calendar TimeZone UUID]
            [org.joda.time DateTimeZone LocalDate LocalDateTime DateTime]
-           (pdok.featured NilAttribute)
+           (pdok.featured GeometryAttribute NilAttribute)
            (java.sql Types PreparedStatement Date Timestamp Array)
-           (clojure.lang Keyword IPersistentMap IMeta IPersistentVector PersistentVector IPersistentList IPersistentSet)))
+           (clojure.lang Keyword IPersistentMap IMeta IPersistentVector PersistentVector IPersistentList IPersistentSet)
+           (com.vividsolutions.jts.geom Geometry)))
+
+(def wkt-writer (WKTWriter.))
 
 (def utcCal (Calendar/getInstance (TimeZone/getTimeZone "UTC")))
 (def nlZone (DateTimeZone/getDefault)) ;; used for reading datetimes, because postgres returns Z values
@@ -21,6 +24,10 @@
   (sql-value [v] (tc/to-sql-time v))
   LocalDate
   (sql-value [v] (tc/to-sql-date v))
+  GeometryAttribute
+  (sql-value [v] (-> v f/as-jts j/sql-value))
+  Geometry
+  (sql-value [v] (str "SRID=" (.getSRID v) ";" (.write ^WKTWriter wkt-writer v)))
   Keyword
   (sql-value [v] (name v))
   IPersistentMap
@@ -53,6 +60,12 @@
   (set-parameter [v ^PreparedStatement s ^long i]
     (.setDate s i (j/sql-value v) utcCal))
   UUID
+  (set-parameter [v ^PreparedStatement s ^long i]
+    (.setObject s i (j/sql-value v) Types/OTHER))
+  GeometryAttribute
+  (set-parameter [v ^PreparedStatement s ^long i]
+    (.setObject s i (j/sql-value v) Types/OTHER))
+  Geometry
   (set-parameter [v ^PreparedStatement s ^long i]
     (.setObject s i (j/sql-value v) Types/OTHER))
   IPersistentMap
@@ -110,6 +123,8 @@
   (result-set-read-column [v _ _]
     (into [] (.getArray v))))
 
+(def geometry-type "geometry")
+
 (declare clj-to-pg-type)
 
 (defn vector->pg-type [v]
@@ -132,4 +147,5 @@
       Double "double precision"
       Boolean "boolean"
       UUID "uuid"
+      GeometryAttribute geometry-type
       "text")))

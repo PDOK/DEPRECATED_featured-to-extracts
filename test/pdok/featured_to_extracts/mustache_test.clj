@@ -1,7 +1,8 @@
 (ns pdok.featured-to-extracts.mustache-test
   (:require [clojure.test :refer :all]
             [cheshire.core :as json]
-            [pdok.featured-to-extracts.mustache :as m]))
+            [pdok.featured-to-extracts.mustache :as m])
+  (:import [pdok.featured GeometryAttribute]))
 
 
 (deftest test-resolve-as-function
@@ -38,7 +39,7 @@
   "<?xml version=\"1.0\" encoding=\"UTF-8\"?><gml:Surface srsName=\"urn:ogc:def:crs:EPSG::28992\"><gml:patches><gml:PolygonPatch><gml:exterior><gml:LinearRing><gml:posList srsDimension=\"2\" count=\"5\">172307.599 509279.740 172307.349 509280.920 172306.379 509280.670 172306.699 509279.490 172307.599 509279.740</gml:posList></gml:LinearRing></gml:exterior></gml:PolygonPatch></gml:patches></gml:Surface>"
   )
 
-(def example-geometry-bgt-wegdeel {"gml" example-gml-bgt-wegdeel, "type" "gml"})
+(def example-geometry-bgt-wegdeel (GeometryAttribute. "gml" example-gml-bgt-wegdeel))
 
 (def example-attributes-bgt-wegdeel
   { "_traffic-area-gml-id" "abcdef"
