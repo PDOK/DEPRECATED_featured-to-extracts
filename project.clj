@@ -1,5 +1,5 @@
 (def version (slurp "VERSION"))
-(def artifact-name (str "featured-" version))
+(def artifact-name (str "featured-to-extracts-" version))
 (def uberjar-name (str artifact-name "-standalone.jar"))
 (def webjar-name (str artifact-name "-web.jar"))
 (def uberwar-name (str artifact-name ".war"))

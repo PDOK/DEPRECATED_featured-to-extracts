@@ -1,0 +1,68 @@
+language: clojure
+sudo: required
+
+branches:
+  only:
+    - master
+    - /^release-.*$/
+
+addons:
+  postgresql: "9.5"
+
+jdk:
+  - oraclejdk8
+
+services:
+  - postgresql
+  - docker
+
+install:
+  - curl https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein > $HOME/lein
+  - chmod u+x $HOME/lein
+  - export lein=$HOME/lein
+  - sudo apt-get install -y postgresql-9.5-postgis-2.3
+  - sudo service postgresql restart
+
+before_script:
+  - psql -U postgres -c "create database pdok"
+  - psql -U postgres -d pdok -c "create extension postgis"
+  - psql -U postgres -d pdok -c "create extension postgis_topology"
+  - psql -U postgres -d pdok -c "create extension fuzzystrmatch"
+  - psql -U postgres -d pdok -c "create extension postgis_tiger_geocoder"
+  - export DATABASE_PASSWORD=
+
+script:
+  - $lein test
+  - $lein test :regression
+  - $lein with-profile +web-jar build
+  - mkdir artifacts && cp target/*.jar artifacts/
+
+after_success:
+  - chmod +x .travis/create-docker-snapshot.sh
+  - .travis/create-docker-snapshot.sh
+
+before_deploy:
+  - export VERSION=$(printf $(cat VERSION))
+  - chmod +x .travis/*.sh
+  - .travis/build-releases.sh
+
+deploy:
+  - provider: script
+    script: .travis/create-docker-release.sh
+    skip_cleanup: true
+    on:
+      tags: true
+  - provider: releases
+    api_key: $GITHUB_OAUTH_TOKEN
+    file_glob: true
+    file:
+      - artifacts/featured-to-extracts-$VERSION-standalone.jar
+      - artifacts/featured-to-extracts-$VERSION-web.jar
+    skip_cleanup: true
+    on:
+      tags: true
+
+cache:
+  directories:
+    - $HOME/.m2
+    - $HOME/.lein
