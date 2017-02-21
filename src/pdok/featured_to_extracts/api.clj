@@ -105,7 +105,10 @@
             (swap! stats assoc-in [:processing worker-id] nil)
             (stats-on-callback callback-chan request run-stats)))
         (catch Exception e
-          (let [error-stats (merge request {:status "error" :msg (str e)})]
+          (let [error-str (if (instance? Iterable e)
+                            (clojure.string/join " Next: " (map str (seq e)))
+                            (str e))
+                error-stats (merge request {:status "error" :msg error-str})]
             (log/warn e error-stats)
             (swap! stats assoc-in [:processing worker-id] nil)
             (stats-on-callback callback-chan request error-stats)))
