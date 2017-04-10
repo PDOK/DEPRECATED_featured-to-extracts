@@ -35,7 +35,7 @@
                  [ring/ring-defaults "0.2.2"]
                  [ring/ring-json "0.4.0"]
                  [http-kit "2.2.0"]
-                 [nl.pdok/featured-shared "1.0-rc9"]]
+                 [nl.pdok/featured-shared "1.1.2"]]
   :plugins [[lein-ring "0.10.0" ]
             [lein-filegen "0.1.0-SNAPSHOT"]]
   :ring {:port 5000

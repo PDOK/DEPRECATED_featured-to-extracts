@@ -149,3 +149,5 @@
       UUID "uuid"
       GeometryAttribute geometry-type
       "text")))
+
+(def quoted (j/quoted \"))

@@ -13,9 +13,17 @@
   (:import (java.sql SQLException)
            (java.util UUID)))
 
-(def ^{:private true } extract-schema (:schema config/db))
-(def ^{:private true } extractset-table (str extract-schema ".extractset"))
-(def ^{:private true } extractset-area-table (str extract-schema ".extractset_area"))
+(def ^{:private true} extract-schema
+  (pg/quoted (:schema config/db)))
+
+(defn- qualified-table [table]
+  (str extract-schema "." (pg/quoted table)))
+
+(def ^{:private true} extractset-table
+  (qualified-table "extractset"))
+
+(def ^{:private true} extractset-area-table
+  (qualified-table "extractset_area"))
 
 (defn features-for-extract [dataset feature-type extract-type features]
   "Returns the rendered representation of the collection of features for a given feature-type inclusive tiles-set"
@@ -27,8 +35,7 @@
 
 (defn- jdbc-insert-extract [db table entries]
   (when (seq entries)
-    (let [qualified-table (str extract-schema "." table)
-          query (str "INSERT INTO " qualified-table
+    (let [query (str "INSERT INTO " (qualified-table table)
                      " (feature_type, version, valid_from, valid_to, publication, tiles, xml) VALUES (?, ?, ?, ?, ?, ?, ?)")]
       (try (j/execute! db (cons query entries) {:multi? true :transaction? (:transaction? db)})
            (catch SQLException e
@@ -99,15 +106,15 @@
   (let [versions-only (map #(take 1 %) (filter (fn [[_ valid-from]] (not valid-from)) versions))
         with-valid-from (map (fn [[ov vf]] [ov vf ov vf]) (filter (fn [[_ valid-from]] valid-from) versions))]
     (when (seq versions-only)
-      (let [query (str "DELETE FROM " extract-schema "." table
+      (let [query (str "DELETE FROM " (qualified-table table)
                        " WHERE version = ?")]
         (try (j/execute! db (cons query versions-only) {:multi? true :transaction? (:transaction? db)})
              (catch SQLException e
                (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
                (throw e)))))
     (when (seq with-valid-from)
-      (let [query (str "DELETE FROM " extract-schema "." table
-                       " WHERE version = ? AND valid_from = ? AND id IN (SELECT id FROM " extract-schema "." table
+      (let [query (str "DELETE FROM " (qualified-table table)
+                       " WHERE version = ? AND valid_from = ? AND id IN (SELECT id FROM " (qualified-table table)
                        " WHERE version = ? AND valid_from = ? ORDER BY id ASC LIMIT 1)")]
         (try (j/execute! db (cons query with-valid-from) {:multi? true :transaction? (:transaction? db)})
              (catch SQLException e
