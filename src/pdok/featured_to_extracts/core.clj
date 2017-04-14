@@ -126,17 +126,17 @@
     (jdbc-delete-versions db table versions)))
 
 (defn changelog->change-inserts [record]
-  (condp = (:action record)
-    :new (:feature record)
-    :change (:feature record)
-    :close (:feature record)
+  (condp = (:_action record)
+    "new" record
+    "change" record
+    "close" record
     nil))
 
 (defn changelog->deletes [record]
-  (condp = (:action record)
-    :delete [(:version record)]
-    :change [(:old-version record) (:_valid_from (:feature record))]
-    :close [(:old-version record) (:_valid_from (:feature record))]
+  (condp = (:_action record)
+    "delete" [(:_previous_version record)]
+    "change" [(:_previous_version record) (:_valid_from record)]
+    "close" [(:_previous_version record) (:_valid_from record)]
     nil))
 
 (def ^:dynamic *process-insert-extract* (partial transform-and-add-extract config/db))
@@ -168,35 +168,31 @@
   (when-not (clojure.string/blank? datetimestring)
     (tc/to-local-date-time (tf/parse date-time-formatter datetimestring))))
 
-(defn make-change-record [csv-line]
-  (let [columns (str/split csv-line #",")
-        action (keyword (nth columns 0))]
-    (merge {:action     action
-            :feature-id (nth columns 1)}
-           (case action
-             :delete {:version     (UUID/fromString (nth columns 2))}
-             :new    {:version     (UUID/fromString (nth columns 2))
-                      :feature     (t/from-json (str/join "," (drop 3 columns)))}
-             :close  {:old-version (UUID/fromString (nth columns 2))
-                      :version     (UUID/fromString (nth columns 3))
-                      :feature     (t/from-json (str/join "," (drop 4 columns)))}
-             :change {:old-version (UUID/fromString (nth columns 2))
-                      :version     (UUID/fromString (nth columns 3))
-                      :feature     (t/from-json (str/join "," (drop 4 columns)))}))))
+(defn make-change-record [transit-line]
+  (let [feature (t/from-json transit-line)]
+    (merge (:attributes feature)
+           {:_action (:action feature)
+            :_collection (:collection feature)
+            :_id (:id feature)
+            :_previous_version (:previous-version feature)
+            :_version (:version feature)
+            :_tiles (:tiles feature)
+            :_valid_from (:valid-from feature)
+            :_valid_to (:valid-to feature)})))
 
 (defn parse-changelog [in-stream]
   "Returns [dataset collection change-record], Where every line is a map with
   keys: feature-id,action,version,tiles,valid-from,old-version,old-tiles,old-valid-from,feature"
   (let [lines (line-seq (io/reader in-stream))
         version (first lines)
-        [dataset collection] (str/split (second lines) #",")
+        collection (:collection (t/from-json (second lines)))
         ;drop collection info + header
         lines (drop 2 lines)]
-    [version dataset collection (map make-change-record lines)]))
+    [version collection (map make-change-record lines)]))
 
 (defn update-extracts [dataset extract-types changelog-stream]
-  (let [[version changelog-dataset collection changes] (parse-changelog changelog-stream)]
-    (if-not (= version "v1")
+  (let [[version collection changes] (parse-changelog changelog-stream)]
+    (if-not (= version "pdok-featured-changelog-v2")
       {:status "error" :msg (str "unknown changelog version" version)}
       (if-not (every? *initialized-collection?* (map #(template/template-key dataset % collection) extract-types))
         {:status "error" :msg "missing template(s)" :collection collection :extract-types extract-types}
@@ -212,4 +208,3 @@
       (println "could not load template(s)"))))
 
 ;(with-open [s (file-stream ".test-files/new-features-single-collection-100000.json")] (time (last (features-from-package-stream s))))
-
