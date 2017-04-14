@@ -146,3 +146,8 @@
                    (test-timeline->extract {:n-extracts 3
                                             :n-valid-to 2}
                                            (:extracts results)))
+
+(defregressiontest new-change_with_array_attribute results
+                   (test-timeline->extract {:n-extracts 2
+                                            :n-valid-to 1}
+                                           (:extracts results)))
