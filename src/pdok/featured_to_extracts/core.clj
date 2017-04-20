@@ -172,7 +172,7 @@
   (let [feature (t/from-json transit-line)]
     (merge (:attributes feature)
            {:_action (:action feature)
-            :_collection (:collection feature)
+            :_collection (.toLowerCase (:collection feature))
             :_id (:id feature)
             :_previous_version (:previous-version feature)
             :_version (:version feature)
@@ -185,7 +185,7 @@
   keys: feature-id,action,version,tiles,valid-from,old-version,old-tiles,old-valid-from,feature"
   (let [lines (line-seq (io/reader in-stream))
         version (first lines)
-        collection (:collection (t/from-json (second lines)))
+        collection (.toLowerCase (:collection (t/from-json (second lines))))
         ;drop collection info + header
         lines (drop 2 lines)]
     [version collection (map make-change-record lines)]))
