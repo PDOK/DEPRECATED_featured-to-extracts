@@ -83,8 +83,8 @@
                                            (:extracts results)))
 
 (defregressiontest new-change-close_with_attributes results
-                   (test-timeline->extract {:n-extracts 3
-                                            :n-valid-to 3}
+                   (test-timeline->extract {:n-extracts 2
+                                            :n-valid-to 2}
                                            (:extracts results)))
 
 (defregressiontest new-change-change-delete results
