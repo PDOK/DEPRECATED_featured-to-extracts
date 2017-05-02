@@ -25,12 +25,14 @@
 (def ^{:private true} extractset-area-table
   (qualified-table "extractset_area"))
 
+(def ^:dynamic *render-template* m/render)
+
 (defn features-for-extract [dataset feature-type extract-type features]
   "Returns the rendered representation of the collection of features for a given feature-type inclusive tiles-set"
   (if (empty? features)
     [nil nil]
     (let [template-key (template/template-key dataset extract-type feature-type)]
-      [nil (map #(vector feature-type (:_version %) (:_tiles %) (m/render template-key %)
+      [nil (map #(vector feature-type (:_version %) (:_tiles %) (*render-template* template-key %)
                          (:_valid_from %) (:_valid_to %) (:lv-publicatiedatum %)) features)])))
 
 (defn- jdbc-insert-extract [db table entries]
@@ -139,8 +141,6 @@
     "close" [(:_previous_version record) (:_valid_from record)]
     nil))
 
-(def ^:dynamic *process-insert-extract* (partial transform-and-add-extract config/db))
-(def ^:dynamic *process-delete-extract* (partial delete-extracts-with-version config/db))
 (def ^:dynamic *initialized-collection?* m/registered?)
 
 (defn- process-changes [dataset collection extract-types changes]
@@ -152,10 +152,10 @@
              remaining parts]
         (let [records (first remaining)]
           (when records
-            (*process-insert-extract* dataset collection extract-type
-                                      (filter (complement nil?) (map changelog->change-inserts records)))
-            (*process-delete-extract* dataset collection extract-type
-                                      (filter (complement nil?) (map changelog->deletes records)))
+            (transform-and-add-extract config/db dataset collection extract-type
+                                       (filter (complement nil?) (map changelog->change-inserts records)))
+            (delete-extracts-with-version config/db dataset collection extract-type
+                                          (filter (complement nil?) (map changelog->deletes records)))
             (if (= 0 (mod i 10))
               (log/info "Creating extracts, processed:" (* i batch-size)))
             (recur (inc i) (rest remaining))))))
