@@ -12,6 +12,22 @@
 (def dataset "regression-set")
 (def extract-type "gml")
 
+(defn- get-or-add-extractset [tx dataset extract-type]
+  (let [table (str dataset "_" extract-type)]
+    (j/execute! test-db [(str "CREATE SCHEMA IF NOT EXISTS " schema)])
+    (j/execute! test-db [(str "CREATE TABLE " schema ".\"" table "\" ("
+                              "id BIGSERIAL PRIMARY KEY, "
+                              "version UUID, "
+                              "feature_type TEXT, "
+                              "valid_from TIMESTAMP WITHOUT TIME ZONE, "
+                              "valid_to TIMESTAMP WITHOUT TIME ZONE, "
+                              "publication TIMESTAMP WITHOUT TIME ZONE, "
+                              "tiles INTEGER[], "
+                              "xml TEXT NOT NULL, "
+                              "created_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)")])
+    (j/execute! test-db [(str "CREATE INDEX \"" table "_version_idx\" ON " schema ".\"" table "\" "
+                              "USING btree(version)")])))
+
 (defn- query [select where]
   (let [table (str dataset "_" extract-type)]
     (when (pg/table-exists? test-db schema table)
@@ -20,19 +36,15 @@
 (defn process-feature-permutation [changelog]
   (with-bindings
     {#'e/*render-template* (constantly "test")
+     #'e/*get-or-add-extractset* get-or-add-extractset
+     #'e/*add-metadata-extract-records* (constantly nil)
      #'e/*initialized-collection?* (constantly true)}
     (let [result (e/update-extracts dataset [extract-type] changelog)
           _ (println result)]
       {:statistics result})))
 
 (defn cleanup []
-  (let [extractset-id (:id (first (j/query test-db [(str "SELECT id "
-                                                         "FROM " schema ".extractset "
-                                                         "WHERE name = ? AND extract_type = ?")
-                                                    dataset extract-type])))]
-    (j/execute! test-db [(str "DELETE FROM " schema ".extractset WHERE id = ?") extractset-id])
-    (j/execute! test-db [(str "DELETE FROM " schema ".extractset_area WHERE extractset_id = ?") extractset-id])
-    (j/execute! test-db [(str "DROP TABLE IF EXISTS " schema ".\"" dataset "_" extract-type "\" CASCADE")])))
+  (j/execute! test-db [(str "DROP TABLE IF EXISTS " schema ".\"" dataset "_" extract-type "\"")]))
 
 (defmethod clojure.test/report :begin-test-var [m]
   (with-test-out

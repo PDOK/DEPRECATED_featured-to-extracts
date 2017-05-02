@@ -46,14 +46,15 @@
 
 (defn get-or-add-extractset [tx dataset extract-type]
   "return id"
-  (let [query (str "SELECT id, name FROM " extractset-table " WHERE name = ? AND extract_type = ?")
+  (let [query (str "SELECT id FROM " extractset-table " WHERE name = ? AND extract_type = ?")
         result (j/query tx [query dataset extract-type])]
     (if (empty? result)
       (do
         (j/query tx [(str "SELECT " extract-schema ".add_extractset(?, ?)") dataset extract-type])
         (get-or-add-extractset tx dataset extract-type))
-      {:extractset-id (:id (first result))
-       :extractset-name (:name (first result))})))
+      (:id (first result)))))
+
+(def ^:dynamic *get-or-add-extractset* get-or-add-extractset)
 
 (defn add-extractset-area [tx extractset-id tiles]
   (let [query (str "SELECT * FROM " extractset-area-table " WHERE extractset_id = ? AND area_id = ?")]
@@ -68,16 +69,18 @@
   (let [tiles (reduce clojure.set/union (map tiles-from-feature rendered-features))]
     (add-extractset-area tx extractset-id tiles)))
 
+(def ^:dynamic *add-metadata-extract-records* add-metadata-extract-records)
+
 (defn- tranform-feature-for-db [[feature-type version tiles xml-feature valid-from valid-to publication-date]]
   [feature-type version valid-from valid-to publication-date (vec tiles) xml-feature])
 
 (defn add-extract-records [tx dataset extract-type rendered-features]
   "Inserts the xml-features and tile-set in an extract schema based on dataset, extract-type, version and feature-type,
    if schema or table doesn't exists it will be created."
-  (let [{:keys [extractset-id extractset-name]} (get-or-add-extractset tx dataset extract-type)]
+  (let [extractset-id (*get-or-add-extractset* tx dataset extract-type)]
     (do
-      (jdbc-insert-extract tx (str extractset-name "_" extract-type) (map tranform-feature-for-db rendered-features))
-      (add-metadata-extract-records tx extractset-id rendered-features))
+      (jdbc-insert-extract tx (str dataset "_" extract-type) (map tranform-feature-for-db rendered-features))
+      (*add-metadata-extract-records* tx extractset-id rendered-features))
     (count rendered-features)))
 
 (defn transform-and-add-extract [tx dataset feature-type extract-type features]
@@ -116,7 +119,7 @@
           (throw e))))))
 
 (defn- delete-extracts-with-version [db dataset feature-type extract-type versions]
-  (let [table (str dataset "_" extract-type "_" feature-type)]
+  (let [table (str dataset "_" extract-type)]
     (jdbc-delete-versions db table versions)))
 
 (defn changelog->change-inserts [record]
