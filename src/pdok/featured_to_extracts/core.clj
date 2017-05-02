@@ -35,93 +35,85 @@
       [nil (map #(vector feature-type (:_version %) (:_tiles %) (*render-template* template-key %)
                          (:_valid_from %) (:_valid_to %) (:lv-publicatiedatum %)) features)])))
 
-(defn- jdbc-insert-extract [db table entries]
+(defn- jdbc-insert-extract [tx table entries]
   (when (seq entries)
-    (let [query (str "INSERT INTO " (qualified-table table)
-                     " (feature_type, version, valid_from, valid_to, publication, tiles, xml) VALUES (?, ?, ?, ?, ?, ?, ?)")]
-      (try (j/execute! db (cons query entries) {:multi? true :transaction? (:transaction? db)})
-           (catch SQLException e
-             (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-             (throw e))))))
+    (try
+      (pg/batch-insert tx (qualified-table table)
+                       [:feature_type, :version, :valid_from, :valid_to, :publication, :tiles, :xml] entries)
+      (catch SQLException e
+        (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
+        (throw e)))))
 
-(defn get-or-add-extractset [db dataset extract-type]
+(defn get-or-add-extractset [tx dataset extract-type]
   "return id"
-  (let [query (str "select id, name from " extractset-table " where name = ? and extract_type = ?")]
-    (j/with-db-connection [c db]
-                          (let [result (j/query c [query dataset extract-type])]
-                            (if (empty? result)
-                              (do
-                                (j/query c [(str "SELECT " extract-schema ".add_extractset(?,?)")
-                                            dataset
-                                            extract-type
-                                            ])
-                                (get-or-add-extractset db dataset extract-type))
+  (let [query (str "SELECT id, name FROM " extractset-table " WHERE name = ? AND extract_type = ?")
+        result (j/query tx [query dataset extract-type])]
+    (if (empty? result)
+      (do
+        (j/query tx [(str "SELECT " extract-schema ".add_extractset(?, ?)") dataset extract-type])
+        (get-or-add-extractset tx dataset extract-type))
+      {:extractset-id (:id (first result))
+       :extractset-name (:name (first result))})))
 
-                              {:extractset-id (:id (first result))
-                               :extractset-name (:name (first result))})))))
-
-(defn add-extractset-area [db extractset-id tiles]
-  (let [query (str "select * from " extractset-area-table " where extractset_id = ? and area_id = ?")]
-    (j/with-db-transaction [c db]
-                           (doseq [area-id tiles]
-                             (if (empty? (j/query c [query extractset-id area-id]))
-                               (j/insert! db extractset-area-table {:extractset_id extractset-id :area_id area-id}))))))
+(defn add-extractset-area [tx extractset-id tiles]
+  (let [query (str "SELECT * FROM " extractset-area-table " WHERE extractset_id = ? AND area_id = ?")]
+    (doseq [area-id tiles]
+      (if (empty? (j/query tx [query extractset-id area-id]))
+        (pg/insert tx extractset-area-table [:extractset_id :area_id] [extractset-id area-id])))))
 
 (defn- tiles-from-feature [[type version tiles & more]]
   tiles)
 
-(defn add-metadata-extract-records [db extractset-id rendered-features]
+(defn add-metadata-extract-records [tx extractset-id rendered-features]
   (let [tiles (reduce clojure.set/union (map tiles-from-feature rendered-features))]
-    (add-extractset-area db extractset-id tiles)))
+    (add-extractset-area tx extractset-id tiles)))
 
 (defn- tranform-feature-for-db [[feature-type version tiles xml-feature valid-from valid-to publication-date]]
   [feature-type version valid-from valid-to publication-date (vec tiles) xml-feature])
 
-(defn add-extract-records [db dataset extract-type rendered-features]
+(defn add-extract-records [tx dataset extract-type rendered-features]
   "Inserts the xml-features and tile-set in an extract schema based on dataset, extract-type, version and feature-type,
    if schema or table doesn't exists it will be created."
-  (let [{:keys [extractset-id extractset-name]} (get-or-add-extractset db dataset extract-type) ]
+  (let [{:keys [extractset-id extractset-name]} (get-or-add-extractset tx dataset extract-type)]
     (do
-      (jdbc-insert-extract db (str extractset-name "_" extract-type) (map tranform-feature-for-db rendered-features))
-      (add-metadata-extract-records db extractset-id rendered-features))
+      (jdbc-insert-extract tx (str extractset-name "_" extract-type) (map tranform-feature-for-db rendered-features))
+      (add-metadata-extract-records tx extractset-id rendered-features))
     (count rendered-features)))
 
-
-(defn transform-and-add-extract [extracts-db dataset feature-type extract-type features]
-  (let [[error features-for-extract] (features-for-extract dataset
-                                                           feature-type
-                                                           extract-type
-                                                           features)]
+(defn transform-and-add-extract [tx dataset feature-type extract-type features]
+  (let [[error features-for-extract] (features-for-extract dataset feature-type extract-type features)]
     (if (nil? error)
       (if (nil? features-for-extract)
         {:status "ok" :count 0}
-        (let [n-inserted-records (add-extract-records extracts-db dataset extract-type features-for-extract)]
-          (log/debug "Extract records inserted: " n-inserted-records (str/join "-" (list dataset feature-type extract-type)))
+        (let [n-inserted-records (add-extract-records tx dataset extract-type features-for-extract)]
+          (log/debug "Extract records inserted: " n-inserted-records
+                     (str/join "-" (list dataset feature-type extract-type)))
           {:status "ok" :count n-inserted-records}))
       (do
         (log/error "Error creating extracts" error)
         {:status "error" :msg error :count 0}))))
 
+(defn- delete-version-with-valid-from-sql [table]
+  (str "DELETE FROM " (qualified-table table)
+       " WHERE version = ? AND valid_from = ? AND id IN (SELECT id FROM " (qualified-table table)
+       " WHERE version = ? AND valid_from = ? ORDER BY id ASC LIMIT 1)"))
 
-(defn- jdbc-delete-versions [db table versions]
-  "([version valid_from][version valid_from] ... )"
+(defn- jdbc-delete-versions [tx table versions]
+  "([version valid_from] ... )"
   (let [versions-only (map #(take 1 %) (filter (fn [[_ valid-from]] (not valid-from)) versions))
         with-valid-from (map (fn [[ov vf]] [ov vf ov vf]) (filter (fn [[_ valid-from]] valid-from) versions))]
     (when (seq versions-only)
-      (let [query (str "DELETE FROM " (qualified-table table)
-                       " WHERE version = ?")]
-        (try (j/execute! db (cons query versions-only) {:multi? true :transaction? (:transaction? db)})
-             (catch SQLException e
-               (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-               (throw e)))))
+      (try
+        (pg/batch-delete tx (qualified-table table) [:version] versions-only)
+        (catch SQLException e
+          (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
+          (throw e))))
     (when (seq with-valid-from)
-      (let [query (str "DELETE FROM " (qualified-table table)
-                       " WHERE version = ? AND valid_from = ? AND id IN (SELECT id FROM " (qualified-table table)
-                       " WHERE version = ? AND valid_from = ? ORDER BY id ASC LIMIT 1)")]
-        (try (j/execute! db (cons query with-valid-from) {:multi? true :transaction? (:transaction? db)})
-             (catch SQLException e
-               (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-               (throw e)))))))
+      (try
+        (pg/execute-batch-query tx (delete-version-with-valid-from-sql table) with-valid-from)
+        (catch SQLException e
+          (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
+          (throw e))))))
 
 (defn- delete-extracts-with-version [db dataset feature-type extract-type versions]
   (let [table (str dataset "_" extract-type "_" feature-type)]
@@ -143,25 +135,25 @@
 
 (def ^:dynamic *initialized-collection?* m/registered?)
 
-(defn- process-changes [dataset collection extract-types changes]
+(defn- process-changes [tx dataset collection extract-types changes]
   (let [batch-size 10000
         parts (partition-all batch-size changes)]
-    (log/info "Creating extracts for" dataset collection extract-types )
+    (log/info "Creating extracts for" dataset collection extract-types)
     (doseq [extract-type extract-types]
       (loop [i 1
              remaining parts]
         (let [records (first remaining)]
           (when records
-            (transform-and-add-extract config/db dataset collection extract-type
+            (transform-and-add-extract tx dataset collection extract-type
                                        (filter (complement nil?) (map changelog->change-inserts records)))
-            (delete-extracts-with-version config/db dataset collection extract-type
+            (delete-extracts-with-version tx dataset collection extract-type
                                           (filter (complement nil?) (map changelog->deletes records)))
             (if (= 0 (mod i 10))
               (log/info "Creating extracts, processed:" (* i batch-size)))
             (recur (inc i) (rest remaining))))))
     (log/info "Finished " dataset collection extract-types)))
 
-(def date-time-formatter (tf/formatters :date-time-parser) )
+(def date-time-formatter (tf/formatters :date-time-parser))
 (defn parse-time
   "Parses an ISO8601 date timestring to local date time"
   [datetimestring]
@@ -198,7 +190,9 @@
         {:status "error" :msg "missing template(s)" :collection collection :extract-types extract-types}
         (do
           (when (seq? changes)
-            (process-changes dataset collection extract-types changes))
+            (let [tx (pg/begin-transaction config/db)]
+              (process-changes tx dataset collection extract-types changes)
+              (pg/commit-transaction tx)))
           {:status "ok" :collection collection})))))
 
 (defn -main [template-location dataset extract-type & more]
@@ -207,4 +201,5 @@
       (comment (println (apply fill-extract dataset extract-type more)))
       (println "could not load template(s)"))))
 
-;(with-open [s (file-stream ".test-files/new-features-single-collection-100000.json")] (time (last (features-from-package-stream s))))
+;(with-open [s (file-stream ".test-files/new-features-single-collection-100000.json")]
+;  (time (last (features-from-package-stream s))))
