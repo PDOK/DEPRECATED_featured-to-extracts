@@ -3,11 +3,12 @@
             [clj-time [coerce :as tc]]
             [clojure.tools.logging :as log]
             [pdok.transit :as transit]
-            [pdok.featured.feature :as f])
+            [pdok.featured.feature :as f]
+            [clojure.string :as str])
   (:import (clojure.lang IMeta IPersistentList IPersistentMap IPersistentSet IPersistentVector Keyword PersistentVector)
            (com.vividsolutions.jts.geom Geometry)
            (com.vividsolutions.jts.io WKTWriter)
-           (java.sql Array Date PreparedStatement Timestamp Types)
+           (java.sql Array Connection Date PreparedStatement Timestamp Types)
            (java.util Calendar TimeZone UUID)
            (org.joda.time DateTime DateTimeZone LocalDate LocalDateTime)
            (pdok.featured GeometryAttribute NilAttribute)))
@@ -154,6 +155,61 @@
       "text")))
 
 (def quoted (j/quoted \"))
+
+(defn sql-identifier [s]
+  (j/quoted \" (name s)))
+
+(defn qualified-table [schema table]
+  (str (sql-identifier schema) "." (sql-identifier table)))
+
+(defn begin-transaction [db]
+  (let [connection (j/get-connection db)
+        _ (.setAutoCommit connection false)]
+    {:connection connection}))
+
+(defn commit-transaction [tx]
+  (with-open [connection (j/get-connection tx)]
+    (.commit connection)))
+
+(defn execute-batch-query [tx ^String query batch]
+  (with-open [stmt (let [^Connection c (:connection tx)] (.prepareStatement c query))]
+    (doseq [values batch]
+      (doseq [value (map-indexed vector values)]
+        (j/set-parameter
+          (second value)
+          ^PreparedStatement stmt
+          ^Integer (-> value first inc)))
+      (.addBatch ^PreparedStatement stmt))
+    (.executeBatch ^PreparedStatement stmt)))
+
+(defn batch-insert [tx qualified-table columns batch]
+  (let [query (str "INSERT INTO " qualified-table
+                   "(" (->> columns (map sql-identifier) (str/join ", ")) ")"
+                   " VALUES (" (->> columns (map (constantly "?")) (str/join ", ")) ")")]
+    (execute-batch-query tx query batch)))
+
+(defn batch-delete [tx qualified-table columns batch]
+  (let [query (str "DELETE FROM " qualified-table
+                   " WHERE " (->> columns (map sql-identifier) (map #(str % " = ?")) (str/join " AND ")))]
+    (execute-batch-query tx query batch)))
+
+(defn execute-query
+  ([tx ^String query]
+   (execute-query tx query []))
+  ([tx ^String query values]
+   (with-open [stmt (let [^Connection c (:connection tx)] (.prepareStatement c query))]
+     (doseq [value (map-indexed vector values)]
+       (j/set-parameter
+         (second value)
+         ^PreparedStatement stmt
+         ^Integer (-> value first inc)))
+     (.execute ^PreparedStatement stmt))))
+
+(defn insert [tx qualified-table columns values]
+  (let [query (str "INSERT INTO " qualified-table
+                   "(" (->> columns (map sql-identifier) (str/join ", ")) ")"
+                   " VALUES (" (->> columns (map (constantly "?")) (str/join ", ")) ")")]
+    (execute-query tx query values)))
 
 (defn table-exists? [tx schema table]
   (let [query "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ?"
