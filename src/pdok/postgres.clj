@@ -4,18 +4,21 @@
             [clojure.tools.logging :as log]
             [pdok.transit :as transit]
             [pdok.featured.feature :as f])
-  (:import [com.vividsolutions.jts.io WKTWriter]
-           [java.util Calendar TimeZone UUID]
-           [org.joda.time DateTimeZone LocalDate LocalDateTime DateTime]
-           (pdok.featured GeometryAttribute NilAttribute)
-           (java.sql Types PreparedStatement Date Timestamp Array)
-           (clojure.lang Keyword IPersistentMap IMeta IPersistentVector PersistentVector IPersistentList IPersistentSet)
-           (com.vividsolutions.jts.geom Geometry)))
+  (:import (clojure.lang IMeta IPersistentList IPersistentMap IPersistentSet IPersistentVector Keyword PersistentVector)
+           (com.vividsolutions.jts.geom Geometry)
+           (com.vividsolutions.jts.io WKTWriter)
+           (java.sql Array Date PreparedStatement Timestamp Types)
+           (java.util Calendar TimeZone UUID)
+           (org.joda.time DateTime DateTimeZone LocalDate LocalDateTime)
+           (pdok.featured GeometryAttribute NilAttribute)))
 
 (def wkt-writer (WKTWriter.))
 
 (def utcCal (Calendar/getInstance (TimeZone/getTimeZone "UTC")))
-(def nlZone (DateTimeZone/getDefault)) ;; used for reading datetimes, because postgres returns Z values
+
+;; The server's time zone, not necessarily Europe/Amsterdam.
+;; Used for reading DateTimes, because PostgreSQL returns Z values and we want local ones without time zone.
+(def serverTimeZone (DateTimeZone/getDefault))
 
 (extend-protocol j/ISQLValue
   DateTime
@@ -116,16 +119,16 @@
 
 (extend-protocol j/IResultSetReadColumn
   Date
-  (result-set-read-column [v _ _] (LocalDate. ^Date v ^DateTimeZone nlZone))
+  (result-set-read-column [v _ _]
+    (LocalDate. ^Date v ^DateTimeZone serverTimeZone))
   Timestamp
-  (result-set-read-column [v _ _] (LocalDateTime. ^Timestamp v ^DateTimeZone nlZone))
+  (result-set-read-column [v _ _]
+    (LocalDateTime. ^Timestamp v ^DateTimeZone serverTimeZone))
   Array
   (result-set-read-column [v _ _]
     (into [] (.getArray v))))
 
 (def geometry-type "geometry")
-
-(declare clj-to-pg-type)
 
 (defn vector->pg-type [v]
   (let [e (first v)]
@@ -151,3 +154,8 @@
       "text")))
 
 (def quoted (j/quoted \"))
+
+(defn table-exists? [tx schema table]
+  (let [query "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ?"
+        results (j/query tx [query schema table])]
+    (not (nil? (first results)))))
