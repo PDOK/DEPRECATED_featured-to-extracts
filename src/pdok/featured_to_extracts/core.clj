@@ -96,15 +96,34 @@
         (log/error "Error creating extracts" error)
         {:status "error" :msg error :count 0}))))
 
-(defn- delete-version-with-valid-from-sql [table]
-  (str "DELETE FROM " (qualified-table table)
-       " WHERE version = ? AND valid_from = ? AND id IN (SELECT id FROM " (qualified-table table)
-       " WHERE version = ? AND valid_from = ? ORDER BY id ASC LIMIT 1)"))
+
+(defn- delete-version-with-valid-from-sql [table versions]
+  (let [c (/ (count versions ) 2)]
+    (str "DELETE FROM " (qualified-table table)
+         " WHERE ID IN ("
+         " SELECT DISTINCT ON (version) "
+         "id "
+         "FROM " (qualified-table table)
+         " WHERE (version, valid_from) IN (" (clojure.string/join "," (repeat c "(?,?)")) ") "
+         "ORDER BY version ASC,  id ASC )"
+         )
+    ))
+
+
+
+
+
+(defn- delete-by-version-sql [table versions]
+  (let [query (str "DELETE FROM " (qualified-table table)
+                   " WHERE VERSION IN ("
+                   (clojure.string/join "," (repeat (count versions) "?" ))  ") ")]))
+
+
 
 (defn- jdbc-delete-versions [tx table versions]
   "([version valid_from] ... )"
   (let [versions-only (map #(take 1 %) (filter (fn [[_ valid-from]] (not valid-from)) versions))
-        with-valid-from (map (fn [[ov vf]] [ov vf ov vf]) (filter (fn [[_ valid-from]] valid-from) versions))]
+        with-valid-from (flatten(map (fn [[ov vf]] [ov vf ]) (filter (fn [[_ valid-from]] valid-from) versions)))]
     (when (seq versions-only)
       (try
         (pg/batch-delete tx (qualified-table table) [:version] versions-only)
@@ -113,7 +132,7 @@
           (throw e))))
     (when (seq with-valid-from)
       (try
-        (pg/execute-batch-query tx (delete-version-with-valid-from-sql table) with-valid-from)
+        (pg/execute-query tx (delete-version-with-valid-from-sql table with-valid-from) with-valid-from)
         (catch SQLException e
           (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
           (throw e))))))
@@ -203,6 +222,3 @@
     (if-not (some false? (map template/add-or-update-template templates-with-metadata))
       (comment (println (apply fill-extract dataset extract-type more)))
       (println "could not load template(s)"))))
-
-;(with-open [s (file-stream ".test-files/new-features-single-collection-100000.json")]
-;  (time (last (features-from-package-stream s))))
