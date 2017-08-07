@@ -205,6 +205,8 @@
          ^Integer (-> value first inc)))
      (.execute ^PreparedStatement stmt))))
 
+
+
 (defn insert [tx qualified-table columns values]
   (let [query (str "INSERT INTO " qualified-table
                    "(" (->> columns (map sql-identifier) (str/join ", ")) ")"

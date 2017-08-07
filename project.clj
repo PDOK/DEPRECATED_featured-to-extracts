@@ -44,7 +44,8 @@
          :uberwar-name ~uberwar-name}
   :main ^:skip-aot pdok.featured-to-extracts.cli
   :resource-paths ["config" "resources"]
-  :test-selectors {:default (fn [m] (not (:regression m)))
+  :test-selectors {:default (fn [m] (not (or (:performance m ) (:regression m))))
+                   :performance :performance
                    :regression :regression}
   :filegen [{:data ~(str version "(" git-ref ")")
              :template-fn #(str %1)

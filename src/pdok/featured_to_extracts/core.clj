@@ -112,7 +112,6 @@
 
 
 
-
 (defn- delete-by-version-sql [table versions]
   (let [query (str "DELETE FROM " (qualified-table table)
                    " WHERE VERSION IN ("
@@ -126,7 +125,7 @@
         with-valid-from (flatten(map (fn [[ov vf]] [ov vf ]) (filter (fn [[_ valid-from]] valid-from) versions)))]
     (when (seq versions-only)
       (try
-        (pg/batch-delete tx (qualified-table table) [:version] versions-only)
+        (pg/execute-query tx (delete-by-version-sql table versions-only)  versions-only)
         (catch SQLException e
           (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
           (throw e))))
