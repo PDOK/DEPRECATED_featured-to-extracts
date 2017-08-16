@@ -16,6 +16,11 @@
 (def ^{:private true} extract-schema
   (pg/quoted (:schema config/db)))
 
+(def ^{:private true} delta-schema
+  (pg/quoted (:schema config/dbdelta)))
+
+
+
 (defn- qualified-table [table]
   (str extract-schema "." (pg/quoted table)))
 
