@@ -49,7 +49,7 @@ Example:
 ### REST API
 
 #### Register templates
-POST on <featured-root>/api/template. All parameters are mandatory.
+POST on `<context root>/api/template`. All parameters are mandatory.
 
     {
       "dataset": "<dataset>",
@@ -59,7 +59,7 @@ POST on <featured-root>/api/template. All parameters are mandatory.
     }
 
 #### Generate extracts
-POST on <featured-root>/api/process. Parameters _format_ and _callback_ are optional.
+POST on `<context root>/api/process`. Parameters _format_ and _callback_ are optional.
 
     {
       "dataset": "<dataset>",
