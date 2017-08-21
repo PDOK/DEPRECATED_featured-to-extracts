@@ -198,10 +198,11 @@
               (pg/commit-transaction tx)))
           {:status "ok" :collection collection})))))
 
-(defn -main [template-location dataset extract-type & more]
+(defn -main [template-location dataset extract-type & args]
   (let [templates-with-metadata (template/templates-with-metadata dataset template-location)]
     (if-not (some false? (map template/add-or-update-template templates-with-metadata))
-      (comment (println (apply fill-extract dataset extract-type more)))
+      (let [changelog-file (first args)]
+        (println (update-extracts dataset [extract-type] changelog-file)))
       (println "could not load template(s)"))))
 
 ;(with-open [s (file-stream ".test-files/new-features-single-collection-100000.json")]

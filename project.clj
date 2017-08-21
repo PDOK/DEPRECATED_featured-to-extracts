@@ -42,7 +42,7 @@
          :handler pdok.featured-to-extracts.api/app
          :init pdok.featured-to-extracts.api/init!
          :uberwar-name ~uberwar-name}
-  :main ^:skip-aot pdok.featured-to-extracts.cli
+  :main ^:skip-aot pdok.featured-to-extracts.core
   :resource-paths ["config" "resources"]
   :test-selectors {:default (fn [m] (not (:regression m)))
                    :regression :regression}
