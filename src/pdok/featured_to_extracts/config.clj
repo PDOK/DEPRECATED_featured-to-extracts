@@ -48,6 +48,7 @@
          :schema (or (env :extracts-schema) "deltamanagement")})
 
 
+(def test-db db)
 
 (defn create-workers [factory-f]
   (let [n-workers (read-string (or (env :n-workers) "2"))]
