@@ -4,7 +4,9 @@
              [core :as core]]
             [clojure.java.jdbc :as j]
             [clojure.java.io :as io]
-            [clojure.test :refer :all])
+            [pdok.featured-to-extracts.mustache :as m]
+            [clojure.test :refer :all]
+            [pdok.featured-to-extracts.template :as template])
   (:import [java.io ByteArrayInputStream])
   )
 
@@ -69,10 +71,34 @@
     )
 )
 
+(comment
 (deftest delta-new
   (run "./resources/delta/1502975188495-bgt-Pand.changelog")
-  )
+  ) )
 
+
+(def delta-gml-pand-template (slurp (io/resource "templates/delta/delta-gml-pand.mustache")))
+(def delta-gml-start-partial (slurp (io/resource "templates/delta/partials/start.mustache")))
+(def delta-gml-end-partial   (slurp (io/resource "templates/delta/partials/end.mustache")))
+
+(defn- test-feature [id version]
+  {"_id" id
+   "_version" version
+   })
+
+(defn two-features [] (list (test-feature "ID101" "Version1")
+                            (test-feature "ID201" "Version2")))
+
+
+(deftest test-two-rendered-features
+  (let [_ (template/add-or-update-template {:dataset      "delta"
+                                            :extract-type "gml"
+                                            :name         "pand"
+                                            :template     delta-gml-pand-template})
+
+        [error features] (core/features-for-extract "delta" "pand" "gml" (two-features))
+        rendered-feature (nth (first features) 1)]
+    (is (= 2 (count features)))))
 
 
 
