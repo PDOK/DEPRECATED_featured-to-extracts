@@ -1,0 +1,30 @@
+{{>start-model}}
+	<BuildingPart xmlns="http://www.opengis.net/citygml/building/2.0" gml:id="b{{_version}}">
+		{{>start-feature-type}}
+			<imgeo:identificatieBAGPND>{{identificatieBAGPND}}</imgeo:identificatieBAGPND>
+			<imgeo:geometrie2dGrondvlak>{{{_geometry.gml}}}</imgeo:geometrie2dGrondvlak>
+			{{#nummeraanduidingreeks}}
+			{{^reden_leeg}}
+			<imgeo:nummeraanduidingreeks>
+				<imgeo:Nummeraanduidingreeks>
+					<imgeo:nummeraanduidingreeks>
+						<imgeo:Label>
+							<imgeo:tekst>{{tekst}}</imgeo:tekst>{{#positie}}
+							<imgeo:positie>
+								<imgeo:Labelpositie>
+									<imgeo:plaatsingspunt>{{{_geometry.gml}}}</imgeo:plaatsingspunt>
+									<imgeo:hoek>{{hoek}}</imgeo:hoek>
+								</imgeo:Labelpositie>
+							</imgeo:positie>{{/positie}}
+						</imgeo:Label>
+					</imgeo:nummeraanduidingreeks>
+					<imgeo:identificatieBAGVBOLaagsteHuisnummer>{{identificatieBAGVBOLaagsteHuisnummer}}</imgeo:identificatieBAGVBOLaagsteHuisnummer>
+					{{#identificatieBAGVBOHoogsteHuisnummer}}
+					<imgeo:identificatieBAGVBOHoogsteHuisnummer>{{.}}</imgeo:identificatieBAGVBOHoogsteHuisnummer>
+					{{/identificatieBAGVBOHoogsteHuisnummer}}
+				</imgeo:Nummeraanduidingreeks>
+			</imgeo:nummeraanduidingreeks>
+		{{/reden_leeg}}
+		{{/nummeraanduidingreeks}}
+	</BuildingPart>
+{{>end-model}}
