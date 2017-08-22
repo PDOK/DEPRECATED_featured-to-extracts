@@ -12,7 +12,7 @@
 
   (def test-db config/test-db)
   (def schema (:schema test-db))
-  (def dataset "delta")
+  (def dataset "bgtv3")
   (def extract-type "gml")
 
 
@@ -41,27 +41,35 @@
     (j/execute! test-db [(str "CREATE INDEX \"" table "_version_idx\" ON " schema ".\"" table "\" "
                               "USING btree(version)")])))
 
+(def delta-gml-pand-template (slurp (io/resource "templates/delta/delta-gml-pand.mustache")))
+(def bgtv3-gml-pand-template (slurp (io/resource "templates/delta/bgtv3-gml-pand.mustache")))
 
 
 (defn run [file]
     (clean-db)
+  (let [_ (template/add-or-update-template {:dataset      "delta"
+                                            :extract-type "gml"
+                                            :name         "pand"
+                                            :template     delta-gml-pand-template})
+        _ (template/add-or-update-template {:dataset      "bgtv3"
+                                            :extract-type "gml"
+                                            :name         "pand"
+                                            :template     bgtv3-gml-pand-template})
+
+        ]
+
     (try
       (with-bindings
-        {#'core/*render-template* (constantly "test")
+        {
          #'core/*get-or-add-extractset* get-or-add-extractset
          #'core/*add-metadata-extract-records* (constantly nil)
          #'core/*initialized-collection?* (constantly true)}
         (with-open [in (io/input-stream (.getFile (clojure.java.io/resource file)))]
           (let [result (core/update-extracts dataset '("gml") in)]
             (println result)
-            )))) )
+            ))))) )
 
 
-
-(comment
-  (deftest only-new-test
-    (run "./resources/performance/1501164506557-performance-set-col1.changelog"))
-)
 
 (comment
   (deftest new-and_deleted-test
@@ -71,13 +79,11 @@
     )
 )
 
-(comment
 (deftest delta-new
   (run "./resources/delta/1502975188495-bgt-Pand.changelog")
-  ) )
+  )
 
 
-(def delta-gml-pand-template (slurp (io/resource "templates/delta/delta-gml-pand.mustache")))
 (def delta-gml-start-partial (slurp (io/resource "templates/delta/partials/start.mustache")))
 (def delta-gml-end-partial   (slurp (io/resource "templates/delta/partials/end.mustache")))
 
@@ -90,17 +96,19 @@
                             (test-feature "ID201" "Version2")))
 
 
-(deftest test-two-rendered-features
-  (let [_ (template/add-or-update-template {:dataset      "delta"
-                                            :extract-type "gml"
-                                            :name         "pand"
-                                            :template     delta-gml-pand-template})
+(comment
 
-        [error features] (core/features-for-extract "delta" "pand" "gml" (two-features))
-        rendered-feature (nth (first features) 1)]
-    (is (= 2 (count features)))))
+  (deftest test-two-rendered-features
+    (let [_ (template/add-or-update-template {:dataset      "delta"
+                                              :extract-type "gml"
+                                              :name         "pand"
+                                              :template     delta-gml-pand-template})
 
+          [error features] (core/features-for-extract "delta" "pand" "gml" (two-features))
+          rendered-feature (nth (first features) 1)]
+      (is (= 2 (count features)))))
 
+  )
 
 
 
