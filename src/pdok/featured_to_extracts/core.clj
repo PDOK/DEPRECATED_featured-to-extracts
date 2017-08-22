@@ -150,16 +150,33 @@
     (doseq [extract-type extract-types]
       (loop [i 1
              remaining parts]
+
         (let [records (first remaining)]
           (when records
-            (transform-and-add-extract tx dataset collection extract-type
-                                       (filter (complement nil?) (map changelog->change-inserts records)))
-            (delete-extracts-with-version tx dataset collection extract-type
-                                          (filter (complement nil?) (map changelog->deletes records)))
-            (if (= 0 (mod i 10))
-              (log/info "Creating extracts, processed:" (* i batch-size)))
+            (let [added-features (filter (complement nil?) (map changelog->change-inserts records))
+                  deleted-features (filter (complement nil?) (map changelog->deletes records))]
+              " $ROV$-1"
+              "  Filter hier let [inserted-featured (filter (complement nil?) (map changelog->change-inserts records))]"
+              "  Idem voor deleted-records"
+              (transform-and-add-extract tx dataset collection extract-type added-features)
+              (delete-extracts-with-version tx dataset collection extract-type deleted-features)
+
+
+
+              (if (= 0 (mod i 10))
+                (log/info "Creating extracts, processed:" (* i batch-size)))
+              " $ROV$-2"
+              " map on inserted-records / deleted records "
+
+              )
             (recur (inc i) (rest remaining))))))
     (log/info "Finished " dataset collection extract-types)))
+
+
+
+(defn- filter-insert-data[feature]
+
+  )
 
 (def date-time-formatter (tf/formatters :date-time-parser))
 (defn parse-time
