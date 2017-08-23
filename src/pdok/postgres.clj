@@ -8,7 +8,7 @@
   (:import (clojure.lang IMeta IPersistentList IPersistentMap IPersistentSet IPersistentVector Keyword PersistentVector)
            (com.vividsolutions.jts.geom Geometry)
            (com.vividsolutions.jts.io WKTWriter)
-           (java.sql Array Connection Date PreparedStatement Timestamp Types)
+           (java.sql Array Connection Date PreparedStatement Timestamp Types ResultSet)
            (java.util Calendar TimeZone UUID)
            (org.joda.time DateTime DateTimeZone LocalDate LocalDateTime)
            (pdok.featured GeometryAttribute NilAttribute)))
@@ -188,14 +188,59 @@
                    " VALUES (" (->> columns (map (constantly "?")) (str/join ", ")) ")")]
     (execute-batch-query tx query batch)))
 
+
+(defn batch-insert [tx qualified-table columns batch]
+  (let [query (str "INSERT INTO " qualified-table
+                   "(" (->> columns (map sql-identifier) (str/join ", ")) ")"
+                   " VALUES (" (->> columns (map (constantly "?")) (str/join ", ")) ")")]
+    (execute-batch-query tx query batch)))
+
+
+
 (defn batch-delete [tx qualified-table columns batch]
   (let [query (str "DELETE FROM " qualified-table
                    " WHERE " (->> columns (map sql-identifier) (map #(str % " = ?")) (str/join " AND ")))]
     (execute-batch-query tx query batch)))
 
-(defn execute-query
+
+
+
+(defn result-seq [^java.sql.ResultSet rs & keys]
+  (if (.next rs)
+    (lazy-seq
+      (cons
+        (->> keys
+             (map
+               (fn [idx key]
+                 (let [value (.getObject rs ^int idx)]
+                   {key (if
+                          (instance? java.sql.Array value)
+                          (seq (.getArray ^java.sql.Array value))
+                          value)}))
+               (map inc (range)))
+             (reduce merge))
+        (apply
+          (partial result-seq rs)
+          keys)))
+    (list)))
+
+
+
+(defn ^ResultSet execute-query
   ([tx ^String query]
    (execute-query tx query []))
+  ([tx ^String query values]
+   (with-open [stmt (let [^Connection c (:connection tx)] (.prepareStatement c query))]
+     (doseq [value (map-indexed vector values)]
+       (j/set-parameter
+         (second value)
+         ^PreparedStatement stmt
+         ^Integer (-> value first inc)))
+     (.executeQuery ^PreparedStatement stmt))))
+
+(defn execute
+  ([tx ^String query]
+   (execute tx query []))
   ([tx ^String query values]
    (with-open [stmt (let [^Connection c (:connection tx)] (.prepareStatement c query))]
      (doseq [value (map-indexed vector values)]
@@ -209,9 +254,17 @@
   (let [query (str "INSERT INTO " qualified-table
                    "(" (->> columns (map sql-identifier) (str/join ", ")) ")"
                    " VALUES (" (->> columns (map (constantly "?")) (str/join ", ")) ")")]
-    (execute-query tx query values)))
+    (execute tx query values)))
 
 (defn table-exists? [tx schema table]
   (let [query "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ?"
         results (j/query tx [query schema table])]
     (not (nil? (first results)))))
+
+
+(defn select [tx query keys & values]
+  (let [result (execute-query tx query values) ]
+    (result-seq result keys)
+    )
+  )
+

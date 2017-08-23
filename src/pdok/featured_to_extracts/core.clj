@@ -87,6 +87,14 @@
       (:id (first result)))))
 
 
+(defn retrieve-previous-version[tx dataset table extract-type versions]
+  (let [query (str "SELECT * FROM " (qualified-delta-table table) "WHERE version "
+                   " IN (" (->> versions (map (constantly "?")) (str/join ", ")) ")")]
+  (pg/select tx query ["version", "xml"])
+
+))
+
+
 (def ^:dynamic *get-or-add-deltaset* get-or-add-deltaset)
 
 
@@ -232,12 +240,10 @@
           (when records
             (let [added-features (filter (complement nil?) (map changelog->change-inserts records))
                   deleted-features (filter (complement nil?) (map changelog->deletes records))]
-              " $ROV$-1"
-              "  Filter hier let [inserted-featured (filter (complement nil?) (map changelog->change-inserts records))]"
-              "  Idem voor deleted-records"
-              (let [features-for-extract (transform-and-add-extract tx dataset collection extract-type added-features)]
-                " look "
 
+               (let [features-for-extract (transform-and-add-extract tx dataset collection extract-type added-features)
+                    previous-version (retrieve-previous-version tx dataset collection extract-type deleted-features)
+                    ]
                 (transform-and-add-delta  tx dataset collection extract-type features-for-extract)
 
 
