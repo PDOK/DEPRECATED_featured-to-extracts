@@ -47,7 +47,7 @@
 
 (defn run [file]
     (clean-db)
-  (let [_ (template/add-or-update-template {:dataset      "delta"
+  (let [_ (template/add-or-update-template {:dataset      "bgtv3_delta"
                                             :extract-type "gml"
                                             :name         "pand"
                                             :template     delta-gml-pand-template})

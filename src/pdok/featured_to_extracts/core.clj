@@ -19,10 +19,14 @@
 (def ^{:private true} delta-schema
   (pg/quoted (:schema config/dbdelta)))
 
+(defn delta-dataset[dataset]
+  (str dataset "_delta")
+  )
+
 
 
 (defn- qualified-table [table]
-  (str extract-schema "." (pg/quoted table)))
+2  (str extract-schema "." (pg/quoted table)))
 
 (defn- qualified-delta-table [table]
   (str delta-schema "." (pg/quoted table)))
@@ -45,8 +49,22 @@
   (if (empty? features)
     [nil nil]
     (let [template-key (template/template-key dataset extract-type feature-type)]
-      [nil (map #(vector feature-type (:_version %) (:_tiles %) (*render-template* template-key %)
-                         (:_valid_from %) (:_valid_to %) (:lv-publicatiedatum %)) features)])))
+      [nil (map #(hash-map :feature-type feature-type :feature % :xml (*render-template* template-key %)) features)])))
+
+
+(defn features-for-delta [dataset feature-type extract-type features-for-extract]
+  "Returns the rendered representation of the collection of features for a given feature-type inclusive tiles-set"
+  (if (empty? features-for-extract)
+    [nil nil]
+    (let [template-key (template/template-key (delta-dataset dataset) extract-type feature-type)]
+      [nil (map #(hash-map :feature-type (:feature-type %)
+                           :feature (:feature %)
+                           :xml (*render-template* template-key {:_id (:_id (:feature %))
+                                                                 :_collection (:feature-type %)
+                                                                 :_version (:_version (:feature %))
+                                                                 :xml (:xml %)
+                                                                 } )) features-for-extract)])))
+
 
 
 (defn- jdbc-insert-delta [tx table entries]
@@ -104,33 +122,28 @@
       (if (empty? (j/query tx [query extractset-id area-id]))
         (pg/insert tx extractset-area-table [:extractset_id :area_id] [extractset-id area-id])))))
 
-(defn- tiles-from-feature [[type version tiles & more]]
-  tiles)
-
-(defn add-metadata-extract-records [tx extractset-id rendered-features]
-  (let [tiles (reduce clojure.set/union (map tiles-from-feature rendered-features))]
+(defn add-metadata-extract-records [tx extractset-id tiles]
+  (let [tiles (reduce clojure.set/union tiles)]
     (add-extractset-area tx extractset-id tiles)))
 
 (def ^:dynamic *add-metadata-extract-records* add-metadata-extract-records)
 
-(defn- tranform-feature-for-db [[feature-type version tiles xml-feature valid-from valid-to publication-date]]
-  [feature-type version valid-from valid-to publication-date (vec tiles) xml-feature])
-
-
-
+(defn map-to-columns [features-for-extract]
+  (map #(vector (:feature-type %) (:_version (:feature %)) (:_valid_from (:feature %)) (:_valid_to (:feature %))
+                (:lv-publicatiedatum (:feature %)) (vec (:_tiles (:feature %))) (:xml %)) features-for-extract))
 
 (defn add-delta-records [tx dataset extract-type rendered-features]
   "Inserts the xml-features and tile-set in an delta schema based on dataset, extract-type, version and feature-type,
    if schema or table doesn't exists it will be created. Most"
   (let [deltaset-id (*get-or-add-deltaset* tx dataset extract-type)]
     (do
-      (jdbc-insert-delta tx (str dataset "_" extract-type) (map tranform-feature-for-db rendered-features))
-      (*add-metadata-extract-records* tx deltaset-id rendered-features))
+      (jdbc-insert-delta tx (str dataset "_" extract-type) (map-to-columns rendered-features))
+      (*add-metadata-extract-records* tx deltaset-id (map #(:_tiles (:feature %)) rendered-features)))
     (count rendered-features)))
 
 
-(defn transform-and-add-delta [tx dataset feature-type extract-type features]
-  (let [[error features-for-delta] (features-for-extract dataset feature-type extract-type features)]
+(defn transform-and-add-delta [tx dataset feature-type extract-type features-for-extract]
+  (let [[error features-for-delta] (features-for-delta dataset feature-type extract-type features-for-extract)]
     (if (nil? error)
       (if (nil? features-for-delta)
         {}
@@ -139,10 +152,8 @@
                      (str/join "-" (list dataset feature-type extract-type)))
           features-for-delta))
       (do
-        (log/error "Error creating deltas" error)
+        (log/error "Error creating extracts" error)
         nil))))
-
-
 
 
 (defn add-extract-records [tx dataset extract-type rendered-features]
@@ -150,10 +161,8 @@
    if schema or table doesn't exists it will be created."
   (let [extractset-id (*get-or-add-extractset* tx dataset extract-type)]
     (do
-      (jdbc-insert-extract tx (str dataset "_" extract-type) (map tranform-feature-for-db rendered-features))
-      (*add-metadata-extract-records* tx extractset-id rendered-features)
-      )
-
+      (jdbc-insert-extract tx (str dataset "_" extract-type) (map-to-columns rendered-features ))
+      (*add-metadata-extract-records* tx extractset-id (map #(:_tiles (:feature %)) rendered-features)))
     (count rendered-features)))
 
 (defn transform-and-add-extract [tx dataset feature-type extract-type features]
@@ -227,7 +236,10 @@
               "  Filter hier let [inserted-featured (filter (complement nil?) (map changelog->change-inserts records))]"
               "  Idem voor deleted-records"
               (let [features-for-extract (transform-and-add-extract tx dataset collection extract-type added-features)]
-                (transform-and-add-delta  tx dataset collection extract-type added-features)
+                " look "
+
+                (transform-and-add-delta  tx dataset collection extract-type features-for-extract)
+
 
                 (delete-extracts-with-version tx dataset collection extract-type deleted-features)
                 (if (= 0 (mod i 10))
