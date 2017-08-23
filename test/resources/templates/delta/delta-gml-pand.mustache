@@ -1,7 +1,16 @@
 <ml:toevoeging objectType="{{_collection}}" objectId="{{_id}}">
+    {{#was}}
+    <ml:was id="{{_previous_version}}">
+        <mlb:bgtObject>
+           {{{.}}}
+        </mlb:bgtObject>
+    </ml:was>
+    {{/was}}
+    {{#wordt}}
     <ml:wordt id="{{_version}}">
         <mlb:bgtObject>
-           {{{xml}}}
+           {{{.}}}
         </mlb:bgtObject>
     </ml:wordt>
+    {{/wordt}}
 </ml:toevoeging>

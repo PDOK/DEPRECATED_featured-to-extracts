@@ -52,18 +52,14 @@
       [nil (map #(hash-map :feature-type feature-type :feature % :xml (*render-template* template-key %)) features)])))
 
 
-(defn features-for-delta [dataset feature-type extract-type features-for-extract]
+(defn features-for-delta [dataset feature-type extract-type enriched-records]
   "Returns the rendered representation of the collection of features for a given feature-type inclusive tiles-set"
-  (if (empty? features-for-extract)
+  (if (empty? enriched-records)
     [nil nil]
     (let [template-key (template/template-key (delta-dataset dataset) extract-type feature-type)]
-      [nil (map #(hash-map :feature-type (:feature-type %)
-                           :feature (:feature %)
-                           :xml (*render-template* template-key {:_id (:_id (:feature %))
-                                                                 :_collection (:feature-type %)
-                                                                 :_version (:_version (:feature %))
-                                                                 :xml (:xml %)
-                                                                 } )) features-for-extract)])))
+      [nil (map #(hash-map :feature-type feature-type
+                           :feature (-> % (dissoc :was) (dissoc :wordt))
+                           :xml (*render-template* template-key %)) enriched-records)])))
 
 
 
@@ -88,11 +84,13 @@
 
 
 (defn retrieve-previous-version[tx dataset table extract-type versions]
+  (if (seq versions)
   (let [query (str "SELECT * FROM " (qualified-delta-table table) "WHERE version "
-                   " IN (" (->> versions (map (constantly "?")) (str/join ", ")) ")")]
-  (pg/select tx query ["version", "xml"])
-
-))
+                   " IN (" (->> versions (map (constantly "?")) (str/join ", ")) ")")
+       result (pg/select tx query ["version", "xml"] versions )]
+    (apply hash-map (mapcat #(list (:version  %)   (:xml %)) result)))
+     {})
+  )
 
 
 (def ^:dynamic *get-or-add-deltaset* get-or-add-deltaset)
@@ -150,15 +148,17 @@
     (count rendered-features)))
 
 
-(defn transform-and-add-delta [tx dataset feature-type extract-type features-for-extract]
-  (let [[error features-for-delta] (features-for-delta dataset feature-type extract-type features-for-extract)]
+(defn transform-and-add-delta [tx dataset feature-type extract-type records was-xmls wordt-xmls]
+  (let [enriched-records (map #(merge % {:was (get was-xmls (:_previous_version %)) :wordt (get wordt-xmls (:_version %))}) records)
+        [error features-for-delta] (features-for-delta dataset feature-type extract-type enriched-records)]
     (if (nil? error)
       (if (nil? features-for-delta)
         {}
         (let [n-inserted-records (add-delta-records tx dataset extract-type features-for-delta)]
           (log/debug "Delta records inserted: " n-inserted-records
                      (str/join "-" (list dataset feature-type extract-type)))
-          features-for-delta))
+          features-for-delta
+          ))
       (do
         (log/error "Error creating extracts" error)
         nil))))
@@ -181,7 +181,8 @@
         (let [n-inserted-records (add-extract-records tx dataset extract-type features-for-extract)]
           (log/debug "Extract records inserted: " n-inserted-records
                      (str/join "-" (list dataset feature-type extract-type)))
-          features-for-extract))
+         (let [ m1 (mapcat #(list (:_version (:feature %))   (:xml %)) features-for-extract)]
+          (apply hash-map m1 ))))
       (do
         (log/error "Error creating extracts" error)
         nil))))
@@ -241,17 +242,13 @@
             (let [added-features (filter (complement nil?) (map changelog->change-inserts records))
                   deleted-features (filter (complement nil?) (map changelog->deletes records))]
 
-               (let [features-for-extract (transform-and-add-extract tx dataset collection extract-type added-features)
-                    previous-version (retrieve-previous-version tx dataset collection extract-type deleted-features)
-                    ]
-                (transform-and-add-delta  tx dataset collection extract-type features-for-extract)
-
+               (let [wordt-xmls (transform-and-add-extract tx dataset collection extract-type added-features)
+                    was-xmls (retrieve-previous-version tx dataset collection extract-type deleted-features)]
+                (transform-and-add-delta  tx dataset collection extract-type records was-xmls wordt-xmls)
 
                 (delete-extracts-with-version tx dataset collection extract-type deleted-features)
                 (if (= 0 (mod i 10))
                   (log/info "Creating extracts, processed:" (* i batch-size)))
-                " $ROV$-2"
-                " map on inserted-records / deleted records "
                 )
 
               )

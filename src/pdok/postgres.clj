@@ -262,9 +262,12 @@
     (not (nil? (first results)))))
 
 
-(defn select [tx query keys & values]
-  (let [result (execute-query tx query values) ]
-    (result-seq result keys)
+(defn select
+  ([tx query keys]
+   (select tx query keys []))
+  ([tx query keys values]
+   (let [result (execute-query tx query values)]
+     (result-seq result keys)
+     )
     )
   )
-
