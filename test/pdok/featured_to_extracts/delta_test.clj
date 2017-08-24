@@ -79,8 +79,14 @@
     )
 )
 
-(deftest delta-new
-  (run "./resources/delta/1502975188495-bgt-Pand.changelog")
+(comment
+  (deftest delta-new
+    (run "./resources/delta/1502975188495-bgt-Pand.changelog")
+    )
+  )
+
+(deftest delta-new-delelete
+  (run "./resources/delta/bgt_pand_new_delete_G0353_cf44d351d9da42c5b6e73bfaf09f5b68.changelog")
   )
 
 

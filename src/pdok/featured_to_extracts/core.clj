@@ -83,9 +83,10 @@
       (:id (first result)))))
 
 
-(defn retrieve-previous-version[tx dataset table extract-type versions]
+(defn retrieve-previous-version[tx dataset collection extract-type versions]
   (if (seq versions)
-  (let [query (str "SELECT * FROM " (qualified-delta-table table) "WHERE version "
+  (let [table (str dataset "_" extract-type)
+        query (str "SELECT * FROM " (qualified-delta-table table) "WHERE version "
                    " IN (" (->> versions (map (constantly "?")) (str/join ", ")) ")")
        result (pg/select tx query ["version", "xml"] versions )]
     (apply hash-map (mapcat #(list (:version  %)   (:xml %)) result)))
@@ -194,20 +195,13 @@
 
 (defn- jdbc-delete-versions [tx table versions]
   "([version valid_from] ... )"
-  (let [versions-only (map #(take 1 %) (filter (fn [[_ valid-from]] (not valid-from)) versions))
-        with-valid-from (map (fn [[ov vf]] [ov vf ov vf]) (filter (fn [[_ valid-from]] valid-from) versions))]
-    (when (seq versions-only)
+    (when (seq versions)
       (try
-        (pg/batch-delete tx (qualified-table table) [:version] versions-only)
+        (pg/batch-delete tx (qualified-table table) [:version] versions)
         (catch SQLException e
           (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
           (throw e))))
-    (when (seq with-valid-from)
-      (try
-        (pg/execute-batch-query tx (delete-version-with-valid-from-sql table) with-valid-from)
-        (catch SQLException e
-          (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-          (throw e))))))
+)
 
 (defn- delete-extracts-with-version [db dataset feature-type extract-type versions]
   (let [table (str dataset "_" extract-type)]
@@ -222,9 +216,9 @@
 
 (defn changelog->deletes [record]
   (condp = (:_action record)
-    "delete" [(:_previous_version record)]
-    "change" [(:_previous_version record) (:_valid_from record)]
-    "close" [(:_previous_version record) (:_valid_from record)]
+    "delete" (:_previous_version record)
+    "change" (:_previous_version record)
+    "close" (:_previous_version record)
     nil))
 
 (def ^:dynamic *initialized-collection?* m/registered?)
