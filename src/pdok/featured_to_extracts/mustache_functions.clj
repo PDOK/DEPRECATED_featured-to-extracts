@@ -10,7 +10,10 @@
 (defn stufgeo-gml [arg] (feature/as-stufgeo-gml arg))
 (defn stufgeo-gml-lc [arg] (feature/as-stufgeo-gml-lc arg))
 
-(defn _version [arg]
-  (if-let [version (:_version arg)]
-    version
-    (pdok.util/ordered-UUID)))
+
+(defn delta-type [arg]
+  (condp = arg
+    "new" "toevoeging"
+    "delete" "verwijdering"
+    "wijziging")
+  )

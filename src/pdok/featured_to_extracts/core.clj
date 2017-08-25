@@ -83,12 +83,14 @@
       (:id (first result)))))
 
 
+
+
 (defn retrieve-previous-version[tx dataset collection extract-type versions]
   (if (seq versions)
   (let [table (str dataset "_" extract-type)
-        query (str "SELECT * FROM " (qualified-delta-table table) "WHERE version "
+        query (str "SELECT * FROM " (qualified-table table) "WHERE version "
                    " IN (" (->> versions (map (constantly "?")) (str/join ", ")) ")")
-       result (pg/select tx query ["version", "xml"] versions )]
+       result (j/query tx (cons query versions))]
     (apply hash-map (mapcat #(list (:version  %)   (:xml %)) result)))
      {})
   )
@@ -106,6 +108,7 @@
       (catch SQLException e
         (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
         (throw e)))))
+
 
 
 
@@ -139,18 +142,23 @@
   (map #(vector (:feature-type %) (:_version (:feature %)) (:_valid_from (:feature %)) (:_valid_to (:feature %))
                 (:lv-publicatiedatum (:feature %)) (vec (:_tiles (:feature %))) (:xml %)) features-for-extract))
 
+(defn map-delta-to-columns [features-for-delta]
+  (map #(vector (:feature-type %) (:_version (:feature %)) (:_valid_from (:feature %)) (:_valid_to (:feature %))
+                (:lv-publicatiedatum (:feature %)) (vec (:_tiles (:feature %))) (:xml %)) features-for-delta))
+
+
 (defn add-delta-records [tx dataset extract-type rendered-features]
   "Inserts the xml-features and tile-set in an delta schema based on dataset, extract-type, version and feature-type,
    if schema or table doesn't exists it will be created. Most"
   (let [deltaset-id (*get-or-add-deltaset* tx dataset extract-type)]
     (do
-      (jdbc-insert-delta tx (str dataset "_" extract-type) (map-to-columns rendered-features))
+      (jdbc-insert-delta tx (str dataset "_" extract-type) (map-delta-to-columns rendered-features))
       (*add-metadata-extract-records* tx deltaset-id (map #(:_tiles (:feature %)) rendered-features)))
     (count rendered-features)))
 
 
 (defn transform-and-add-delta [tx dataset feature-type extract-type records was-xmls wordt-xmls]
-  (let [enriched-records (map #(merge % {:was (get was-xmls (:_previous_version %)) :wordt (get wordt-xmls (:_version %))}) records)
+  (let [enriched-records (map #(merge % {:was (get was-xmls (:_previous_version %)) :wordt (get wordt-xmls (:_version %)) :demo (:_version %)}) records)
         [error features-for-delta] (features-for-delta dataset feature-type extract-type enriched-records)]
     (if (nil? error)
       (if (nil? features-for-delta)
@@ -250,10 +258,6 @@
     (log/info "Finished " dataset collection extract-types)))
 
 
-
-(defn- filter-insert-data[feature]
-
-  )
 
 (def date-time-formatter (tf/formatters :date-time-parser))
 (defn parse-time

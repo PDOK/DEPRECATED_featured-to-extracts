@@ -1,4 +1,4 @@
-<ml:toevoeging objectType="{{_collection}}" objectId="{{_id}}">
+<ml:{{_action.delta-type}} objectType="{{_collection}}" objectId="{{_id}}">
     {{#was}}
     <ml:was id="{{_previous_version}}">
         <mlb:bgtObject>
@@ -13,4 +13,4 @@
         </mlb:bgtObject>
     </ml:wordt>
     {{/wordt}}
-</ml:toevoeging>
+</ml:{{_action.delta-type}}>

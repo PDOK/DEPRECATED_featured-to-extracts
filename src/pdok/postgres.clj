@@ -203,6 +203,12 @@
     (execute-batch-query tx query (map vector batch ))))
 
 
+(defn ron [^java.sql.ResultSet rs & key]
+  (if (.next rs)
+    ()
+    (map #() )
+
+    ))
 
 
 (defn result-seq [^java.sql.ResultSet rs & keys]

@@ -85,7 +85,7 @@
     )
   )
 
-(deftest delta-new-delelete
+(deftest delta-new-delete
   (run "./resources/delta/bgt_pand_new_delete_G0353_cf44d351d9da42c5b6e73bfaf09f5b68.changelog")
   )
 
