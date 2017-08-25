@@ -195,7 +195,7 @@
 
 (defn- jdbc-delete-versions [tx table versions]
   "([version valid_from] ... )"
-    (when (seq versions)
+    (when (not= nil versions)
       (try
         (pg/batch-delete tx (qualified-table table) [:version] versions)
         (catch SQLException e

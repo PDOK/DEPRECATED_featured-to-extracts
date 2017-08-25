@@ -200,14 +200,14 @@
 (defn batch-delete [tx qualified-table columns batch]
   (let [query (str "DELETE FROM " qualified-table
                    " WHERE " (->> columns (map sql-identifier) (map #(str % " = ?")) (str/join " AND ")))]
-    (execute-batch-query tx query batch)))
+    (execute-batch-query tx query (map vector batch ))))
 
 
 
 
 (defn result-seq [^java.sql.ResultSet rs & keys]
   (if (.next rs)
-    (lazy-seq
+    (seq
       (cons
         (->> keys
              (map
@@ -227,16 +227,17 @@
 
 
 (defn ^ResultSet execute-query
-  ([tx ^String query]
-   (execute-query tx query []))
-  ([tx ^String query values]
+  ([tx ^String query columns]
+   (execute-query tx query columns []))
+  ([tx ^String query columns values]
    (with-open [stmt (let [^Connection c (:connection tx)] (.prepareStatement c query))]
      (doseq [value (map-indexed vector values)]
        (j/set-parameter
          (second value)
          ^PreparedStatement stmt
          ^Integer (-> value first inc)))
-     (.executeQuery ^PreparedStatement stmt))))
+     (let [^ResultSet resultset (.executeQuery ^PreparedStatement stmt)]
+       (result-seq resultset columns)))))
 
 (defn execute
   ([tx ^String query]
@@ -263,11 +264,7 @@
 
 
 (defn select
-  ([tx query keys]
-   (select tx query keys []))
-  ([tx query keys values]
-   (let [result (execute-query tx query values)]
-     (result-seq result keys)
-     )
-    )
-  )
+  ([tx query columns]
+   (select tx query columns []))
+  ([tx query columns values]
+   (execute-query tx query columns values)))
