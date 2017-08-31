@@ -96,31 +96,26 @@
         (log/error "Error creating extracts" error)
         {:status "error" :msg error :count 0}))))
 
-(defn- delete-version-with-valid-from-sql [table]
-  (str "DELETE FROM " (qualified-table table)
-       " WHERE version = ? AND valid_from = ? AND id IN (SELECT id FROM " (qualified-table table)
-       " WHERE version = ? AND valid_from = ? ORDER BY id ASC LIMIT 1)"))
 
-(defn- jdbc-delete-versions [tx table versions]
-  "([version valid_from] ... )"
-  (let [versions-only (map #(take 1 %) (filter (fn [[_ valid-from]] (not valid-from)) versions))
-        with-valid-from (map (fn [[ov vf]] [ov vf ov vf]) (filter (fn [[_ valid-from]] valid-from) versions))]
-    (when (seq versions-only)
-      (try
-        (pg/batch-delete tx (qualified-table table) [:version] versions-only)
-        (catch SQLException e
-          (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-          (throw e))))
-    (when (seq with-valid-from)
-      (try
-        (pg/execute-batch-query tx (delete-version-with-valid-from-sql table) with-valid-from)
-        (catch SQLException e
-          (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-          (throw e))))))
 
-(defn- delete-extracts-with-version [db dataset feature-type extract-type versions]
-  (let [table (str dataset "_" extract-type)]
-    (jdbc-delete-versions db table versions)))
+(defn- delete-by-version-sql [table versions]
+  (let [query (str "DELETE FROM " (qualified-table table)
+                   " WHERE VERSION IN ("
+                   (clojure.string/join "," (repeat (count versions) "?" ))  ") ")]))
+
+
+
+
+
+(defn- delete-extracts-with-version [tx dataset feature-type extract-type versions]
+  (let [table (str dataset "_" extract-type)
+        sql (delete-by-version-sql table versions)]
+    (try
+      (pg/execute-query tx sql versions)
+      (catch SQLException e
+        (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
+        (throw e)))
+    ))
 
 (defn changelog->change-inserts [record]
   (condp = (:_action record)
