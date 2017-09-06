@@ -90,7 +90,8 @@
   (let [dataset (:dataset request)
         extract-types (:extractTypes request)
         zipped? (if (nil? (:format request)) true (= (:format request) "zip"))
-        [file err] (download-file (:changeLog request) zipped?)]
+        [file err] (download-file (:changeLog request) zipped?)
+        versioned-deletes (:versioned-deletes request)]
     (if-not file
       (let [msg (if err (str err) "Something went wrong downloading")
             error-stats (merge request {:status "error" :msg msg})]
@@ -100,7 +101,7 @@
       (try
         (with-open [in (io/input-stream file)]
           (let [_ (log/info "Processing file:" (:changeLog request))
-                result (core/update-extracts dataset extract-types in)
+                result (core/update-extracts dataset extract-types in versioned-deletes)
                 run-stats (merge request result)]
             (swap! stats assoc-in [:processing worker-id] nil)
             (stats-on-callback callback-chan request run-stats)))
