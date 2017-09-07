@@ -103,10 +103,10 @@
 
 
 
-(defn- delete-by-version-sql [table versions]
-  (let [query (str "DELETE FROM " (qualified-table table)
+(defn delete-by-version-sql [table versions]
+  (str "DELETE FROM " (qualified-table table)
                    " WHERE VERSION IN ("
-                   (clojure.string/join "," (repeat (count versions) "?" ))  ") ")]))
+                   (clojure.string/join "," (repeat (count versions) "?" ))  ") "))
 
 (defn- jdbc-delete-versions-new-style [tx table versions]
   (try
@@ -135,7 +135,7 @@
 
 (defn- delete-extracts-with-version [db dataset feature-type extract-type versioned-deletes versions]
   (let [table (str dataset "_" extract-type)]
-    (if (= versioned-deletes "true" )
+    (if versioned-deletes
       (jdbc-delete-versions-new-style db table versions)
       (jdbc-delete-versions-old-style db table versions))))
 
@@ -219,7 +219,7 @@
   (let [templates-with-metadata (template/templates-with-metadata dataset template-location)]
     (if-not (some false? (map template/add-or-update-template templates-with-metadata))
       (let [changelog-file (first args)]
-        (println (update-extracts dataset [extract-type] changelog-file)))
+        (println (update-extracts dataset [extract-type] changelog-file false)))
       (println "could not load template(s)"))))
 
 ;(with-open [s (file-stream ".test-files/new-features-single-collection-100000.json")]
