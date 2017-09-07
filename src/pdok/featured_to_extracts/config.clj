@@ -39,6 +39,16 @@
                   :transaction? true
                   :schema (or (env :extracts-schema) "extractmanagement")})
 
+
+(def dbdelta {:subprotocol "postgresql"
+         :subname (or (env :database-url) "//localhost:5432/pdok")
+         :user (or (env :database-user) "postgres")
+         :password (or (env :database-password) "postgres")
+         :transaction? true
+         :schema (or (env :extracts-schema) "deltamanagement")})
+
+
+
 (defn create-workers [factory-f]
   (let [n-workers (read-string (or (env :n-workers) "2"))]
     (dorun (for [i (range 0 n-workers)]
