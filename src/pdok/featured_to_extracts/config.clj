@@ -39,6 +39,8 @@
                   :transaction? true
                   :schema (or (env :extracts-schema) "extractmanagement")})
 
+(def test-db db)
+
 (defn create-workers [factory-f]
   (let [n-workers (read-string (or (env :n-workers) "2"))]
     (dorun (for [i (range 0 n-workers)]
