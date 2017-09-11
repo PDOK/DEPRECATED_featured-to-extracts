@@ -69,6 +69,6 @@
 
 
 (deftest test-delete-new-style
-  (let [sql (core/delete-by-version-sql "test" [1, 2])]
+  (let [sql (core/delete-by-version-sql "test" 2)]
     (println sql)
     (is (= sql expected-sql))))
