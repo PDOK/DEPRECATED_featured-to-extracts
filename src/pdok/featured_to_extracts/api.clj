@@ -46,6 +46,7 @@
    :changeLog                 URI
    (s/optional-key :format)   (s/enum "csv" "zip")
    :extractTypes              [s/Str]
+   (s/optional-key :uniqueVersions) s/Bool
    (s/optional-key :callback) URI})
 
 (def TemplateRequest
