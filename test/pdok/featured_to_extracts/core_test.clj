@@ -2,7 +2,8 @@
   (:require [pdok.featured-to-extracts.core :refer :all]
             [pdok.featured-to-extracts.template :as template]
             [clojure.test :refer :all]
-            [clojure.java.io :as io])
+            [clojure.java.io :as io]
+            [pdok.featured-to-extracts.core :as core])
   (:import (pdok.featured GeometryAttribute)))
 
 (defn- test-feature [name something other]
@@ -14,6 +15,8 @@
 
 (defn two-features [] (list (test-feature "name1" "A" "B")
                             (test-feature "name2" "C" "D")))
+
+(def expected-sql "DELETE FROM \"extractmanagement\".\"test\" WHERE VERSION IN (?,?) ")
 
 (def test-expected-rendered-feature "<dummyObjectMember><naam><hier is een begin>name1</naam><ietsAnders object=\"A\">B</ietsAnders><geo><gml:Polygon xmlns:gml=\"http://www.opengis.net/gml\" srsName=\"EPSG:28992\"><gml:exterior><gml:LinearRing><gml:posList srsDimension=\"2\">10.0 10.0 5.0 10.0 5.0 5.0 10.0 5.0 10.0 10.0</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></geo><noValue></noValue><dit lijkt wel een eind/></dummyObjectMember>")
 
@@ -63,3 +66,9 @@
                                             :template test-indexed-section})
         [error features] (features-for-extract "bgtmutatie" "indexedsection" "testing" elem-at-inputdata)]
     (is (= elem-at-expectedoutput (clojure.string/replace (nth (first features) 3) " " "")))))
+
+
+(deftest test-delete-new-style
+  (let [sql (core/delete-by-version-sql "test" 2)]
+    (println sql)
+    (is (= sql expected-sql))))

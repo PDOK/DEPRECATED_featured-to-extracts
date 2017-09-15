@@ -65,7 +65,7 @@
          #'core/*add-metadata-extract-records* (constantly nil)
          #'core/*initialized-collection?* (constantly true)}
         (with-open [in (io/input-stream (.getFile (clojure.java.io/resource file)))]
-          (let [result (core/update-extracts dataset '("gml") in)]
+          (let [result (core/update-extracts dataset '("gml") in false)]
             (println result)
             ))))) )
 

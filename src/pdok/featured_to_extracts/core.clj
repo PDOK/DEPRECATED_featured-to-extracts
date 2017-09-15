@@ -26,7 +26,7 @@
 
 
 (defn- qualified-table [table]
-2  (str extract-schema "." (pg/quoted table)))
+  (str extract-schema "." (pg/quoted table)))
 
 (defn- qualified-delta-table [table]
   (str delta-schema "." (pg/quoted table)))
@@ -116,7 +116,7 @@
 
 (defn get-or-add-extractset [tx dataset extract-type]
   "return id"
-  (let [query (str "SELECT id FROM " extractset-table " WHERE name = ? AND extract_type = ?")
+    (let [query (str "SELECT id FROM " extractset-table " WHERE name = ? AND extract_type = ?")
         result (j/query tx [query dataset extract-type])]
     (if (empty? result)
       (do
@@ -201,7 +201,22 @@
        " WHERE version = ? AND valid_from = ? AND id IN (SELECT id FROM " (qualified-table table)
        " WHERE version = ? AND valid_from = ? ORDER BY id ASC LIMIT 1)"))
 
-(defn- jdbc-delete-versions [tx table versions]
+
+
+(defn delete-by-version-sql [table version-count]
+  (str "DELETE FROM " (qualified-table table)
+                   " WHERE VERSION IN ("
+       (clojure.string/join "," (repeat version-count "?" ))  ") "))
+
+(defn- jdbc-delete-versions-new-style [tx table versions]
+  (try
+    (pg/execute-query tx (delete-by-version-sql table (count versions)) (map first versions))
+    (catch SQLException e
+      (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
+      (throw e))))
+
+
+(defn- jdbc-delete-versions-old-style [tx table versions]
   "([version valid_from] ... )"
     (when (not= nil versions)
       (try
@@ -211,9 +226,11 @@
           (throw e))))
 )
 
-(defn- delete-extracts-with-version [db dataset feature-type extract-type versions]
+(defn- delete-extracts-with-version [db dataset feature-type extract-type versions unique-versions ]
   (let [table (str dataset "_" extract-type)]
-    (jdbc-delete-versions db table versions)))
+    (if unique-versions
+      (jdbc-delete-versions-new-style db table versions)
+      (jdbc-delete-versions-old-style db table versions))))
 
 (defn changelog->change-inserts [record]
   (condp = (:_action record)
@@ -231,7 +248,7 @@
 
 (def ^:dynamic *initialized-collection?* m/registered?)
 
-(defn- process-changes [tx dataset collection extract-types changes]
+(defn- process-changes [tx dataset collection extract-types changes unique-versions]
   (let [batch-size 10000
         parts (partition-all batch-size changes)]
     (log/info "Creating extracts for" dataset collection extract-types)
@@ -248,7 +265,7 @@
                     was-xmls (retrieve-previous-version tx dataset collection extract-type deleted-features)]
                 (transform-and-add-delta  tx dataset collection extract-type records was-xmls wordt-xmls)
 
-                (delete-extracts-with-version tx dataset collection extract-type deleted-features)
+                (delete-extracts-with-version tx dataset collection extract-type deleted-features unique-versions)
                 (if (= 0 (mod i 10))
                   (log/info "Creating extracts, processed:" (* i batch-size)))
                 )
@@ -288,7 +305,7 @@
         lines (drop 2 lines)]
     [version collection (map make-change-record lines)]))
 
-(defn update-extracts [dataset extract-types changelog-stream]
+(defn update-extracts [dataset extract-types changelog-stream unique-versions]
   (let [[version collection changes] (parse-changelog changelog-stream)]
     (if-not (= version "pdok-featured-changelog-v2")
       {:status "error" :msg (str "unknown changelog version" version)}
@@ -297,7 +314,7 @@
         (do
           (when (seq? changes)
             (let [tx (pg/begin-transaction config/db)]
-              (process-changes tx dataset collection extract-types changes)
+              (process-changes tx dataset collection extract-types changes unique-versions)
               (pg/commit-transaction tx)))
           {:status "ok" :collection collection})))))
 
