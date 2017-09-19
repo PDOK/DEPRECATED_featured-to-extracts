@@ -16,3 +16,5 @@ test/pdok/featured_to_extracts/performance_test.clj
 test/resources/performance
 featured-to-extracts-1.iml___jb_tmp___
 resources/version
+/.classpath
+/.project
