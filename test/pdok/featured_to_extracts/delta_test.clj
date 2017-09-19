@@ -89,6 +89,10 @@
   (run "./resources/delta/bgt_pand_new_delete_G0353_cf44d351d9da42c5b6e73bfaf09f5b68.changelog")
   )
 
+(deftest delta-new-change
+  (run "./resources/delta/bgt_pand_new_change_G0213_0f868fecab1d47a0b328c6c32b767010.changelog")
+  )
+
 
 (def delta-gml-start-partial (slurp (io/resource "templates/delta/partials/start.mustache")))
 (def delta-gml-end-partial   (slurp (io/resource "templates/delta/partials/end.mustache")))
