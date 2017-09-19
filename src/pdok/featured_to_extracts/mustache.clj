@@ -22,8 +22,7 @@
     (mustache-proxy k (f obj))
     (if (and (map? obj) (or (contains? obj k) (contains? obj (name k))))
       (let [value (get obj k (get obj (name k)))]
-        (if (or (= (class value) NilAttribute) (= value nil))
-          nil
+        (when-not (or (= (class value) NilAttribute) (nil? value))
           (mustache-proxy k value))))))
 
 (defn lookup-proxy [obj]

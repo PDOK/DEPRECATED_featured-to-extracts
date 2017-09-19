@@ -88,7 +88,7 @@
       (j/set-parameter (into-array v) s i)))
   IPersistentSet
   (set-parameter [v ^PreparedStatement s ^long i]
-    (j/set-parameter (into [] v) s i)))
+    (j/set-parameter (vec v) s i)))
 
 (extend-protocol j/ISQLParameter
   (Class/forName "[Ljava.lang.Long;")
@@ -127,7 +127,7 @@
     (LocalDateTime. ^Timestamp v ^DateTimeZone serverTimeZone))
   Array
   (result-set-read-column [v _ _]
-    (into [] (.getArray v))))
+    (vec (.getArray v))))
 
 (def geometry-type "geometry")
 

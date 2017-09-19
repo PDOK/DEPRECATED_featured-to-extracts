@@ -258,15 +258,15 @@
 
         (let [records (first remaining)]
           (when records
-            (let [added-features (filter (complement nil?) (map changelog->change-inserts records))
-                  deleted-features (filter (complement nil?) (map changelog->deletes records))]
+            (let [added-features (remove nil? (map changelog->change-inserts records))
+                  deleted-features (remove nil? (map changelog->deletes records))]
 
                (let [wordt-xmls (transform-and-add-extract tx dataset collection extract-type added-features)
                     was-xmls (retrieve-previous-version tx dataset collection extract-type deleted-features)]
                 (transform-and-add-delta  tx dataset collection extract-type records was-xmls wordt-xmls)
 
                 (delete-extracts-with-version tx dataset collection extract-type deleted-features unique-versions)
-                (if (= 0 (mod i 10))
+                (if (zero? (mod i 10))
                   (log/info "Creating extracts, processed:" (* i batch-size)))
                 )
 
