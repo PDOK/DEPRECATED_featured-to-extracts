@@ -216,7 +216,7 @@
                            :collection collection 
                            :extract-types extract-types 
                            :missing-templates missing-templates}]
-            (log/error "Not all templates are found. Details: " + error-msg)
+            (log/error "Not all templates are found. Details: " error-msg)
             error-msg)
           (do
             (log/info "All templates found")
