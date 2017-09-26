@@ -35,6 +35,7 @@
   (clojure.string/replace template "{{>" (str "{{>" qualifier)))
 
 (defn add-or-update-template [{:keys [dataset extract-type name template]}]
+  (log/info "Add/Update template, dataset: " dataset "extract-type: " extract-type "name: " + name)
   (let [template (normalize template)
         template (prefix-partials template (template-qualifier dataset extract-type))
         template-key (template-key dataset extract-type name)]
