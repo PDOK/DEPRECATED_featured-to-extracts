@@ -207,14 +207,24 @@
   (let [[version collection changes] (parse-changelog changelog-stream)]
     (if-not (= version "pdok-featured-changelog-v2")
       {:status "error" :msg (str "unknown changelog version" version)}
-      (if-not (every? *initialized-collection?* (map #(template/template-key dataset % collection) extract-types))
-        {:status "error" :msg "missing template(s)" :collection collection :extract-types extract-types}
-        (do
-          (when (seq? changes)
-            (let [tx (pg/begin-transaction config/db)]
-              (process-changes tx dataset collection extract-types changes unique-versions)
-              (pg/commit-transaction tx)))
-          {:status "ok" :collection collection})))))
+      (let [missing-templates (->> extract-types 
+                                (map #(template/template-key dataset % collection))
+                                (filter #(not *initialized-collection?* %)))]
+        (if (next missing-templates)
+          (let [error-msg {:status "error" 
+                           :msg "missing template(s)" 
+                           :collection collection 
+                           :extract-types extract-types 
+                           :missing-templates missing-templates}]
+            (log/error "Not all templates are found. Details: " + error-msg)
+            error-msg)
+          (do
+            (log/info "All templates found")
+            (when (seq? changes)
+              (let [tx (pg/begin-transaction config/db)]
+                (process-changes tx dataset collection extract-types changes unique-versions)
+                (pg/commit-transaction tx)))
+            {:status "ok" :collection collection}))))))
 
 (defn -main [template-location dataset extract-type & args]
   (let [templates-with-metadata (template/templates-with-metadata dataset template-location)]
