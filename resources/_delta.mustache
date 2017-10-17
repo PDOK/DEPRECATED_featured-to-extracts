@@ -1,16 +1,16 @@
 <ml:{{_action.delta-type}} objectType="{{_collection}}" objectId="{{_id}}">
     {{#was}}
     <ml:was id="{{_previous_version}}">
-        <mlb:bgtObject>
+        <mlb:{{featureRootTag}}>
            {{{.}}}
-        </mlb:bgtObject>
+        </mlb:{{featureRootTag}}>
     </ml:was>
     {{/was}}
     {{#wordt}}
     <ml:wordt id="{{_version}}">
-        <mlb:bgtObject>
+        <mlb:{{featureRootTag}}>
            {{{.}}}
-        </mlb:bgtObject>
+        </mlb:{{featureRootTag}}>
     </ml:wordt>
     {{/wordt}}
 </ml:{{_action.delta-type}}>

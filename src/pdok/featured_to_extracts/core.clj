@@ -56,12 +56,9 @@
   "Returns the rendered representation of the collection of features for a given feature-type inclusive tiles-set"
   (if (empty? enriched-records)
     [nil nil]
-    (let [template-key (template/template-key (delta-dataset dataset) extract-type feature-type)]
-      [nil (map #(hash-map :feature-type feature-type
-                           :feature (-> % (dissoc :was) (dissoc :wordt))
-                           :xml (*render-template* template-key %)) enriched-records)])))
-
-
+    [nil (map #(hash-map :feature-type feature-type
+                         :feature (-> % (dissoc :was) (dissoc :wordt))
+                         :xml (*render-template* "_delta" %)) enriched-records)]))
 
 (defn- jdbc-insert-delta [tx table entries]
   (when (seq entries)
@@ -157,8 +154,14 @@
     (count rendered-features)))
 
 
-(defn transform-and-add-delta [tx dataset feature-type extract-type records was-xmls wordt-xmls]
-  (let [enriched-records (map #(merge % {:was (get was-xmls (:_previous_version %)) :wordt (get wordt-xmls (:_version %)) :demo (:_version %)}) records)
+(defn transform-and-add-delta [tx dataset feature-type extract-type delta-type records was-xmls wordt-xmls]
+  (let [enriched-records (map
+                           #(merge
+                              %
+                              {:featureRootTag (:featureRootTag delta-type)
+                               :was (get was-xmls (:_previous_version %))
+                               :wordt (get wordt-xmls (:_version %))})
+                           records)
         [error features-for-delta] (features-for-delta dataset feature-type extract-type enriched-records)]
     (if (nil? error)
       (if (nil? features-for-delta)
@@ -248,33 +251,28 @@
 
 (def ^:dynamic *initialized-collection?* m/registered?)
 
-(defn- process-changes [tx dataset collection extract-types changes unique-versions]
+(defn- process-changes [tx dataset collection extract-types delta-types changes unique-versions]
   (let [batch-size 10000
-        parts (partition-all batch-size changes)]
-    (log/info "Creating extracts for" dataset collection extract-types)
+        parts (partition-all batch-size changes)
+        delta-type-names (->> delta-types (keys) (map name) (vector))]
+    (log/info "Creating extracts for" dataset collection extract-types 
+              "and deltas for" delta-type-names)
     (doseq [extract-type extract-types]
       (loop [i 1
              remaining parts]
-
         (let [records (first remaining)]
           (when records
             (let [added-features (remove nil? (map changelog->change-inserts records))
                   deleted-features (remove nil? (map changelog->deletes records))]
-
-               (let [wordt-xmls (transform-and-add-extract tx dataset collection extract-type added-features)
-                    was-xmls (retrieve-previous-version tx dataset collection extract-type deleted-features)]
-                (transform-and-add-delta  tx dataset collection extract-type records was-xmls wordt-xmls)
-
+              (let [wordt-xmls (transform-and-add-extract tx dataset collection extract-type added-features)]
+                (if-let [delta-type (-> extract-type keyword delta-types)]
+                  (let [was-xmls (retrieve-previous-version tx dataset collection extract-type deleted-features)]
+                    (transform-and-add-delta tx dataset collection extract-type delta-type records was-xmls wordt-xmls)))
                 (delete-extracts-with-version tx dataset collection extract-type deleted-features unique-versions)
                 (if (zero? (mod i 10))
-                  (log/info "Creating extracts, processed:" (* i batch-size)))
-                )
-
-              )
+                  (log/info "Creating extracts, processed:" (* i batch-size)))))
             (recur (inc i) (rest remaining))))))
-    (log/info "Finished " dataset collection extract-types)))
-
-
+    (log/info "Finished" dataset collection extract-types delta-type-names)))
 
 (def date-time-formatter (tf/formatters :date-time-parser))
 (defn parse-time
@@ -305,7 +303,7 @@
         lines (drop 2 lines)]
     [version collection (map make-change-record lines)]))
 
-(defn update-extracts [dataset extract-types changelog-stream unique-versions]
+(defn update-extracts [dataset extract-types delta-types changelog-stream unique-versions]
   (let [[version collection changes] (parse-changelog changelog-stream)]
     (if-not (= version "pdok-featured-changelog-v2")
       {:status "error" :msg (str "unknown changelog version" version)}
@@ -314,7 +312,7 @@
         (do
           (when (seq? changes)
             (let [tx (pg/begin-transaction config/db)]
-              (process-changes tx dataset collection extract-types changes unique-versions)
+              (process-changes tx dataset collection extract-types delta-types changes unique-versions)
               (pg/commit-transaction tx)))
           {:status "ok" :collection collection})))))
 

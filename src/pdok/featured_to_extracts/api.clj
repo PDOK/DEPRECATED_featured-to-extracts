@@ -46,6 +46,7 @@
    :changeLog                 URI
    (s/optional-key :format)   (s/enum "csv" "zip")
    :extractTypes              [s/Str]
+   (s/optional-key :deltaTypes) {(s/pred keyword?) {:featureRootTag s/Str}}
    (s/optional-key :uniqueVersions) s/Bool
    (s/optional-key :callback) URI})
 
@@ -90,6 +91,7 @@
   (swap! stats update-in [:queued] pop)
   (let [dataset (:dataset request)
         extract-types (:extractTypes request)
+        delta-types (:deltaTypes request)
         zipped? (if (nil? (:format request)) true (= (:format request) "zip"))
         [file err] (download-file (:changeLog request) zipped?)
         unique-versions (:uniqueVersions  request)]
@@ -102,7 +104,7 @@
       (try
         (with-open [in (io/input-stream file)]
           (let [_ (log/info "Processing file:" (:changeLog request))
-                result (core/update-extracts dataset extract-types in unique-versions)
+                result (core/update-extracts dataset extract-types delta-types in unique-versions)
                 run-stats (merge request result)]
             (swap! stats assoc-in [:processing worker-id] nil)
             (stats-on-callback callback-chan request run-stats)))

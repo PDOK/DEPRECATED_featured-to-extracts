@@ -41,22 +41,14 @@
     (j/execute! test-db [(str "CREATE INDEX \"" table "_version_idx\" ON " schema ".\"" table "\" "
                               "USING btree(version)")])))
 
-(def delta-gml-pand-template (slurp (io/resource "templates/delta/delta-gml-pand.mustache")))
 (def bgtv3-gml-pand-template (slurp (io/resource "templates/delta/bgtv3-gml-pand.mustache")))
-
 
 (defn run [file]
     (clean-db)
-  (let [_ (template/add-or-update-template {:dataset      "bgtv3_delta"
+  (let [_ (template/add-or-update-template {:dataset      "bgtv3"
                                             :extract-type "gml"
                                             :name         "pand"
-                                            :template     delta-gml-pand-template})
-        _ (template/add-or-update-template {:dataset      "bgtv3"
-                                            :extract-type "gml"
-                                            :name         "pand"
-                                            :template     bgtv3-gml-pand-template})
-
-        ]
+                                            :template     bgtv3-gml-pand-template})]
 
     (try
       (with-bindings
@@ -65,7 +57,7 @@
          #'core/*add-metadata-extract-records* (constantly nil)
          #'core/*initialized-collection?* (constantly true)}
         (with-open [in (io/input-stream (.getFile (clojure.java.io/resource file)))]
-          (let [result (core/update-extracts dataset '("gml") in false)]
+          (let [result (core/update-extracts dataset '("gml") {:gml {:featureRootTag "myRootTag"}} in false)]
             (println result)
             ))))) )
 
