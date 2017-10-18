@@ -39,7 +39,7 @@
      #'e/*get-or-add-extractset* get-or-add-extractset
      #'e/*add-metadata-extract-records* (constantly nil)
      #'e/*initialized-collection?* (constantly true)}
-    (let [result (e/update-extracts dataset [extract-type] changelog false)
+    (let [result (e/update-extracts dataset [extract-type] {} changelog false)
           _ (println result)]
       {:statistics result})))
 

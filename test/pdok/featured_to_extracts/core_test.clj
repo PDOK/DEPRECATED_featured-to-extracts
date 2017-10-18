@@ -38,7 +38,7 @@
                                             :name "end"
                                             :template test-gml2extract-end-partial})
         [error features] (features-for-extract "test" "dummy" "gml2extract" (two-features))
-        rendered-feature (nth (first features) 3)]
+        rendered-feature (-> features first :xml)]
     (is (= 2 (count features)))
     (is (= test-expected-rendered-feature rendered-feature))))
 
@@ -64,8 +64,9 @@
                                             :extract-type "testing"
                                             :name "indexedsection"
                                             :template test-indexed-section})
-        [error features] (features-for-extract "bgtmutatie" "indexedsection" "testing" elem-at-inputdata)]
-    (is (= elem-at-expectedoutput (clojure.string/replace (nth (first features) 3) " " "")))))
+        [error features] (features-for-extract "bgtmutatie" "indexedsection" "testing" elem-at-inputdata)
+        rendered-feature (-> features first :xml)]
+    (is (= elem-at-expectedoutput (clojure.string/replace rendered-feature " " "")))))
 
 
 (deftest test-delete-new-style
