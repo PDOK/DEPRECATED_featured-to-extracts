@@ -33,6 +33,7 @@ before_script:
 
 script:
   - $lein test
+  - $lein test :delta
   - $lein test :regression
   - $lein with-profile +web-jar build
   - mkdir artifacts && cp target/*.jar artifacts/
