@@ -94,7 +94,7 @@
         delta-types (:deltaTypes request)
         zipped? (if (nil? (:format request)) true (= (:format request) "zip"))
         [file err] (download-file (:changeLog request) zipped?)
-        unique-versions (:uniqueVersions  request)]
+        unique-versions (:uniqueVersions request)]
     (if-not file
       (let [msg (if err (str err) "Something went wrong downloading")
             error-stats (merge request {:status "error" :msg msg})]

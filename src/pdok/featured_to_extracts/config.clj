@@ -39,14 +39,12 @@
                   :transaction? true
                   :schema (or (env :extracts-schema) "extractmanagement")})
 
-
 (def dbdelta {:subprotocol "postgresql"
          :subname (or (env :database-url) "//localhost:5432/pdok")
          :user (or (env :database-user) "postgres")
          :password (or (env :database-password) "postgres")
          :transaction? true
          :schema (or (env :extracts-schema) "deltamanagement")})
-
 
 (def test-db db)
 

@@ -42,9 +42,10 @@
          :handler pdok.featured-to-extracts.api/app
          :init pdok.featured-to-extracts.api/init!
          :uberwar-name ~uberwar-name}
-  :main ^:skip-aot pdok.featured-to-extracts.cli
+  :main ^:skip-aot pdok.featured-to-extracts.core
   :resource-paths ["config" "resources"]
-  :test-selectors {:default (fn [m] (not (or (:regression m) (:delta m))))
+  :test-selectors {:default (fn [m] (not (or (:regression m) (:delta m) (:performance m))))
+                   :performance :performance
                    :regression :regression
                    :delta :delta}
   :filegen [{:data ~(str version "(" git-ref ")")
