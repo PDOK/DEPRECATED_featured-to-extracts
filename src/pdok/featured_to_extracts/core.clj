@@ -220,7 +220,7 @@
 
 (defn- jdbc-delete-versions-new-style [tx table versions]
   (try
-    (pg/execute-query tx (delete-by-version-sql table (count versions)) (map first versions))
+    (pg/execute tx (delete-by-version-sql table (count versions)) versions)
     (log/debug (delete-by-version-sql table (count versions)))
      (catch SQLException e
     (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
