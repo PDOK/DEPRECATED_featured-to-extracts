@@ -52,13 +52,13 @@
       [nil (map #(hash-map :feature-type feature-type :feature % :xml (*render-template* template-key %)) features)])))
 
 
-(defn features-for-delta [dataset feature-type extract-type enriched-records]
+(defn features-for-delta [dataset feature-type extract-type delta-type-info delta-records]
   "Returns the rendered representation of the collection of features for a given feature-type inclusive tiles-set"
-  (if (empty? enriched-records)
+  (if (empty? delta-records)
     [nil nil]
     [nil (map #(hash-map :feature-type feature-type
-                         :feature (-> % (dissoc :was) (dissoc :wordt))
-                         :xml (*render-template* "_delta" %)) enriched-records)]))
+                         :feature (-> % (dissoc :previous) (dissoc :current))
+                         :xml (*render-template* "_delta" (merge delta-type-info %))) delta-records)]))
 
 (defn- jdbc-insert-delta [tx table entries]
   (when (seq entries)
@@ -82,16 +82,16 @@
 
 
 
-(defn retrieve-previous-version[tx dataset collection extract-type versions]
+(defn retrieve-previous-versions [tx dataset collection extract-type versions]
   (if (seq versions)
-  (let [table (str dataset "_" extract-type)
-        query (str "SELECT * FROM " (qualified-table table) "WHERE version "
-                   " IN (" (->> versions (map (constantly "?")) (str/join ", ")) ")")
-       result (j/query tx (cons query versions))]
-    (apply hash-map (mapcat #(list (:version  %)   (:xml %)) result)))
-     {})
-  )
-
+    (let [table (str dataset "_" extract-type)
+          query (str "SELECT * FROM " (qualified-table table) "WHERE version "
+                     " IN (" (->> versions (map (constantly "?")) (str/join ", ")) ")")
+          result (j/query tx (cons query versions))]
+      (apply
+        hash-map
+        (mapcat #(list (:version %) (select-keys % [:tiles :xml])) result)))
+    {}))
 
 (def ^:dynamic *get-or-add-deltaset* get-or-add-deltaset)
 
@@ -154,27 +154,18 @@
     (count rendered-features)))
 
 
-(defn transform-and-add-delta [tx dataset feature-type extract-type delta-type records was-xmls wordt-xmls]
-  (let [enriched-records (map
-                           #(merge
-                              %
-                              {:featureRootTag (:featureRootTag delta-type)
-                               :was (get was-xmls (:_previous_version %))
-                               :wordt (get wordt-xmls (:_version %))})
-                           records)
-        [error features-for-delta] (features-for-delta dataset feature-type extract-type enriched-records)]
+(defn transform-and-add-delta [tx dataset feature-type extract-type delta-type-info delta-records]
+  (let [[error features-for-delta] (features-for-delta dataset feature-type extract-type delta-type-info delta-records)]
     (if (nil? error)
       (if (nil? features-for-delta)
         {}
         (let [n-inserted-records (add-delta-records tx dataset extract-type features-for-delta)]
           (log/debug "Delta records inserted: " n-inserted-records
                      (str/join "-" (list dataset feature-type extract-type)))
-          features-for-delta
-          ))
+          features-for-delta))
       (do
         (log/error "Error creating extracts" error)
         nil))))
-
 
 (defn add-extract-records [tx dataset extract-type rendered-features]
   "Inserts the xml-features and tile-set in an extract schema based on dataset, extract-type, version and feature-type,
@@ -271,10 +262,21 @@
           (when records
             (let [added-features (remove nil? (map changelog->change-inserts records))
                   deleted-features (remove nil? (map changelog->deletes records))]
-              (let [wordt-xmls (transform-and-add-extract tx dataset collection extract-type added-features)]
-                (if-let [delta-type (-> extract-type keyword delta-types)]
-                  (let [was-xmls (retrieve-previous-version tx dataset collection extract-type deleted-features)]
-                    (transform-and-add-delta tx dataset collection extract-type delta-type records was-xmls wordt-xmls)))
+              (let [current-versions-xml (transform-and-add-extract tx dataset collection extract-type added-features)]
+                (if-let [delta-type-info (-> extract-type keyword delta-types)]
+                  (let [previous-versions (retrieve-previous-versions tx dataset collection extract-type deleted-features)
+                        delta-records (->> records
+                                        (map
+                                             #(let [previous-version (->> % :_previous_version (get previous-versions))
+                                                    current-version-xml (->> % :_version (get current-versions-xml))]
+                                             (merge
+                                               %
+                                               {:_tiles (clojure.set/union
+                                                          (:_tiles %)
+                                                          (:tiles previous-version))
+                                                :previous (:xml previous-version)
+                                                :current current-version-xml}))))]
+                    (transform-and-add-delta tx dataset collection extract-type delta-type-info delta-records)))
                 (delete-extracts-with-version tx dataset collection extract-type deleted-features unique-versions)
                 (if (zero? (mod i 10))
                   (log/info "Creating extracts, processed:" (* i batch-size)))))
