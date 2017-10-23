@@ -135,21 +135,24 @@
 
 (def ^:dynamic *add-metadata-extract-records* add-metadata-extract-records)
 
-(defn map-to-columns [features-for-extract]
-  (map #(vector (:feature-type %) (:_version (:feature %)) (:_valid_from (:feature %)) (:_valid_to (:feature %))
-                (:lv-publicatiedatum (:feature %)) (vec (:_tiles (:feature %))) (:xml %)) features-for-extract))
-
-(defn map-delta-to-columns [features-for-delta]
-  (map #(vector (:feature-type %) (:_version (:feature %)) (:_valid_from (:feature %)) (:_valid_to (:feature %))
-                (:lv-publicatiedatum (:feature %)) (vec (:_tiles (:feature %))) (:xml %)) features-for-delta))
-
+(defn map-to-columns [features]
+  (map
+    #(vector
+       (:feature-type %)
+       (:_version (:feature %))
+       (:_valid_from (:feature %))
+       (:_valid_to (:feature %))
+       (:LV-publicatiedatum (:feature %))
+       (vec (:_tiles (:feature %)))
+       (:xml %))
+    features))
 
 (defn add-delta-records [tx dataset extract-type rendered-features]
   "Inserts the xml-features and tile-set in an delta schema based on dataset, extract-type, version and feature-type,
    if schema or table doesn't exists it will be created. Most"
   (let [deltaset-id (*get-or-add-deltaset* tx dataset extract-type)]
     (do
-      (jdbc-insert-delta tx (str dataset "_" extract-type) (map-delta-to-columns rendered-features))
+      (jdbc-insert-delta tx (str dataset "_" extract-type) (map-to-columns rendered-features))
       (*add-metadata-extract-records* tx deltaset-id (map #(:_tiles (:feature %)) rendered-features)))
     (count rendered-features)))
 
