@@ -202,48 +202,39 @@
                    " WHERE " (->> columns (map sql-identifier) (map #(str % " = ?")) (str/join " AND ")))]
     (execute-batch-query tx query (map vector batch ))))
 
-
-(defn ron [^java.sql.ResultSet rs & key]
-  (if (.next rs)
-    ()
-    (map #() )
-
-    ))
-
-
 (defn result-seq [^java.sql.ResultSet rs & keys]
   (if (.next rs)
     (seq
       (cons
         (->> keys
-             (map
-               (fn [idx key]
-                 (let [value (.getObject rs ^int idx)]
-                   {key (if
-                          (instance? java.sql.Array value)
-                          (seq (.getArray ^java.sql.Array value))
-                          value)}))
-               (map inc (range)))
-             (reduce merge))
+          (map
+            (fn [idx key]
+              (let [value (.getObject rs ^int idx)]
+                {key (if
+                       (instance? java.sql.Array value)
+                       (seq (.getArray ^java.sql.Array value))
+                       value)}))
+            (map inc (range)))
+          (reduce merge {}))
         (apply
           (partial result-seq rs)
           keys)))
     (list)))
 
-
-
 (defn ^ResultSet execute-query
   ([tx ^String query columns]
-   (execute-query tx query columns []))
+    (execute-query tx query columns []))
   ([tx ^String query columns values]
-   (with-open [stmt (let [^Connection c (:connection tx)] (.prepareStatement c query))]
-     (doseq [value (map-indexed vector values)]
-       (j/set-parameter
-         (second value)
-         ^PreparedStatement stmt
-         ^Integer (-> value first inc)))
-     (let [^ResultSet resultset (.executeQuery ^PreparedStatement stmt)]
-       (result-seq resultset columns)))))
+    (with-open [stmt (let [^Connection c (:connection tx)] (.prepareStatement c query))]
+      (doseq [value (map-indexed vector values)]
+        (j/set-parameter
+          (second value)
+          ^PreparedStatement stmt
+          ^Integer (-> value first inc)))
+      (let [^ResultSet resultset (.executeQuery ^PreparedStatement stmt)]
+        (apply
+          (partial result-seq resultset)
+          columns)))))
 
 (defn execute
   ([tx ^String query]
