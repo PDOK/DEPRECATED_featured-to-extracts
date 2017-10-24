@@ -8,7 +8,7 @@
             [clojure.java.jdbc :as j]))
 
 (def test-db config/db)
-(def schema (:schema test-db))
+(def schema config/extract-schema)
 (def dataset "regression-set")
 (def extract-type "gml")
 

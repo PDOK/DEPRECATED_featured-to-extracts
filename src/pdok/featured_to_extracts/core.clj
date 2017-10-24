@@ -14,10 +14,10 @@
            (java.util UUID)))
 
 (def ^{:private true} extract-schema
-  (pg/quoted (:schema config/db)))
+  (pg/quoted config/extract-schema))
 
 (def ^{:private true} delta-schema
-  (pg/quoted (:schema config/dbdelta)))
+  (pg/quoted config/delta-schema))
 
 (defn- qualified-table [table]
   (str extract-schema "." (pg/quoted table)))

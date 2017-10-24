@@ -8,8 +8,8 @@
   (:import [java.io ByteArrayInputStream])
   )
 
-(def test-db config/test-db)
-(def schema (:schema test-db))
+(def test-db config/db)
+(def schema config/extract-schema)
 (def dataset "performance-set")
 (def extract-type "gml")
 
