@@ -5,6 +5,11 @@
 (def uberwar-name (str artifact-name ".war"))
 (def git-ref (clojure.string/replace (:out (clojure.java.shell/sh "git" "rev-parse" "HEAD"))#"\n" "" ))
 
+; re-enables http repository support in Leiningen 2.8
+(require 'cemerick.pomegranate.aether)
+(cemerick.pomegranate.aether/register-wagon-factory!
+  "http" #(org.apache.maven.wagon.providers.http.HttpWagon.))
+
 (defproject featured-to-extracts version
   :min-lein-version "2.5.4"
   :uberjar-name ~uberjar-name
