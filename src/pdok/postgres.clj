@@ -188,15 +188,6 @@
                    " VALUES (" (->> columns (map (constantly "?")) (str/join ", ")) ")")]
     (execute-batch-query tx query batch)))
 
-
-(defn batch-insert [tx qualified-table columns batch]
-  (let [query (str "INSERT INTO " qualified-table
-                   "(" (->> columns (map sql-identifier) (str/join ", ")) ")"
-                   " VALUES (" (->> columns (map (constantly "?")) (str/join ", ")) ")")]
-    (execute-batch-query tx query batch)))
-
-
-
 (defn batch-delete [tx qualified-table columns batch]
   (let [query (str "DELETE FROM " qualified-table
                    " WHERE " (->> columns (map sql-identifier) (map #(str % " = ?")) (str/join " AND ")))]
