@@ -320,7 +320,7 @@
   (let [templates-with-metadata (template/templates-with-metadata dataset template-location)]
     (if-not (some false? (map template/add-or-update-template templates-with-metadata))
       (let [changelog-file (first args)]
-        (println (update-extracts dataset [extract-type] changelog-file false)))
+        (println (update-extracts dataset [extract-type] {} changelog-file false)))
       (println "could not load template(s)"))))
 
 ;(with-open [s (file-stream ".test-files/new-features-single-collection-100000.json")]
