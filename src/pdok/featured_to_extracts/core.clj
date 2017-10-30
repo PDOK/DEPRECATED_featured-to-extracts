@@ -13,28 +13,14 @@
   (:import (java.sql SQLException)
            (java.util UUID)))
 
-(def ^{:private true} extract-schema
-  (pg/quoted config/extract-schema))
-
-(def ^{:private true} delta-schema
-  (pg/quoted config/delta-schema))
-
-(defn- qualified-table [table]
-  (str extract-schema "." (pg/quoted table)))
-
-(defn- qualified-delta-table [table]
-  (str delta-schema "." (pg/quoted table)))
-
 (def ^{:private true} deltaset-table
-  (qualified-delta-table "extractset"))
-
-
+  (pg/qualified-table config/delta-schema "extractset"))
 
 (def ^{:private true} extractset-table
-  (qualified-table "extractset"))
+  (pg/qualified-table config/extract-schema "extractset"))
 
 (def ^{:private true} extractset-area-table
-  (qualified-table "extractset_area"))
+  (pg/qualified-table config/extract-schema "extractset_area"))
 
 (def ^:dynamic *render-template* m/render)
 
@@ -57,7 +43,7 @@
 (defn- jdbc-insert-delta [tx table entries]
   (when (seq entries)
     (try
-      (pg/batch-insert tx (qualified-delta-table table)
+      (pg/batch-insert tx (pg/qualified-table config/delta-schema table)
                        [:_delivery_id :feature_type, :version, :valid_from, :valid_to, :publication, :tiles, :xml] entries)
       (catch SQLException e
         (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
@@ -69,14 +55,14 @@
         result (j/query tx [query dataset extract-type])]
     (if (empty? result)
       (do
-        (j/query tx [(str "SELECT " delta-schema ".add_extractset(?, ?)") dataset extract-type])
+        (j/query tx [(str "SELECT " config/delta-schema ".add_extractset(?, ?)") dataset extract-type])
         (get-or-add-deltaset tx dataset extract-type))
       (:id (first result)))))
 
 (defn retrieve-previous-versions [tx dataset collection extract-type versions]
   (if (seq versions)
     (let [table (str dataset "_" extract-type)
-          query (str "SELECT * FROM " (qualified-table table) "WHERE version "
+          query (str "SELECT * FROM " (pg/qualified-table config/extract-schema table) "WHERE version "
                      " IN (" (->> versions (map (constantly "?")) (str/join ", ")) ")")
           result (j/query tx (cons query versions))]
       (apply
@@ -89,7 +75,7 @@
 (defn- jdbc-insert-extract [tx table entries]
   (when (seq entries)
     (try
-      (pg/batch-insert tx (qualified-table table)
+      (pg/batch-insert tx (pg/qualified-table config/extract-schema table)
                        [:feature_type, :version, :valid_from, :valid_to, :publication, :tiles, :xml] entries)
       (catch SQLException e
         (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
@@ -101,7 +87,7 @@
         result (j/query tx [query dataset extract-type])]
     (if (empty? result)
       (do
-        (j/query tx [(str "SELECT " extract-schema ".add_extractset(?, ?)") dataset extract-type])
+        (j/query tx [(str "SELECT " config/extract-schema ".add_extractset(?, ?)") dataset extract-type])
         (get-or-add-extractset tx dataset extract-type))
       (:id (first result)))))
 
@@ -182,14 +168,14 @@
         nil))))
 
 (defn- delete-version-with-valid-from-sql [table]
-  (str "DELETE FROM " (qualified-table table)
-       " WHERE version = ? AND valid_from = ? AND id IN (SELECT id FROM " (qualified-table table)
+  (str "DELETE FROM " (pg/qualified-table config/extract-schema table)
+       " WHERE version = ? AND valid_from = ? AND id IN (SELECT id FROM " (pg/qualified-table config/extract-schema table)
        " WHERE version = ? AND valid_from = ? ORDER BY id ASC LIMIT 1)"))
 
 
 
 (defn delete-by-version-sql [table version-count]
-  (str "DELETE FROM " (qualified-table table)
+  (str "DELETE FROM " (pg/qualified-table config/extract-schema table)
                    " WHERE VERSION IN ("
                    (clojure.string/join "," (repeat version-count "?" ))  ") "))
 
@@ -205,7 +191,7 @@
   "([version valid_from] ... )"
     (when (not= nil versions)
       (try
-        (pg/batch-delete tx (qualified-table table) [:version] versions)
+        (pg/batch-delete tx (pg/qualified-table config/extract-schema table) [:version] versions)
         (catch SQLException e
           (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
           (throw e))))
