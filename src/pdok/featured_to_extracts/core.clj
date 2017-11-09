@@ -44,7 +44,7 @@
   (when (seq entries)
     (try
       (pg/batch-insert tx (pg/qualified-table config/extract-schema table)
-                       [:delivery_id :feature_type, :tiles, :xml] entries)
+                       [:delivery_id :feature_id :feature_type, :tiles, :xml] entries)
       (catch SQLException e
         (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
         (throw e)))))
@@ -76,7 +76,7 @@
   (when (seq entries)
     (try
       (pg/batch-insert tx (pg/qualified-table config/extract-schema table)
-                       [:delivery_id :feature_type, :version, :valid_from, :valid_to, :publication, :tiles, :xml] entries)
+                       [:delivery_id :feature_id :feature_type, :version, :valid_from, :valid_to, :publication, :tiles, :xml] entries)
       (catch SQLException e
         (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
         (throw e)))))
@@ -126,14 +126,15 @@
       (str "delta_" dataset "_" extract-type)
       (->> rendered-features
         (map 
-          #(vector
-             delivery-id
-             (:feature-type %)
-             (-> %
-               (:feature)
-               (:_tiles)
-               (vec))
-             (:xml %)))))
+          #(let [feature (:feature %)]
+             (vector
+               delivery-id
+               (:_id feature)
+               (:feature-type %)
+               (-> feature
+                 (:_tiles)
+                 (vec))
+               (:xml %))))))
     (count rendered-features)))
 
 (defn transform-and-add-delta [tx dataset collection delivery-id extract-type delta-type-info delta-records]
@@ -162,6 +163,7 @@
             #(let [feature (:feature %)]
                (vector
                  delivery-id
+                 (:_id feature)
                  (:feature-type %)
                  (:_version feature)
                  (:_valid_from feature)
