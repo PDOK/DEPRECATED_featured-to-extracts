@@ -44,7 +44,7 @@
   (when (seq entries)
     (try
       (pg/batch-insert tx (pg/qualified-table config/extract-schema table)
-                       [:delivery_id :feature_type, :version, :valid_from, :valid_to, :publication, :tiles, :xml] entries)
+                       [:delivery_id :feature_type, :tiles, :xml] entries)
       (catch SQLException e
         (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
         (throw e)))))
@@ -124,9 +124,16 @@
     (jdbc-insert-delta
       tx
       (str "delta_" dataset "_" extract-type)
-      (map
-        (partial cons delivery-id)
-        (map-to-columns rendered-features)))
+      (->> rendered-features
+        (map 
+          #(vector
+             delivery-id
+             (:feature-type %)
+             (-> %
+               (:feature)
+               (:_tiles)
+               (vec))
+             (:xml %)))))
     (count rendered-features)))
 
 (defn transform-and-add-delta [tx dataset collection delivery-id extract-type delta-type-info delta-records]
@@ -150,10 +157,21 @@
       (jdbc-insert-extract
         tx
         (str dataset "_" extract-type)
-        (map
-          (partial cons delivery-id)
-          (map-to-columns rendered-features )))
-      (*add-metadata-extract-records* tx extractset-id (map #(:_tiles (:feature %)) rendered-features)))
+        (->> rendered-features
+          (map
+            #(let [feature (:feature %)]
+               (vector
+                 delivery-id
+                 (:feature-type %)
+                 (:_version feature)
+                 (:_valid_from feature)
+                 (:_valid_to feature)
+                 (:LV-publicatiedatum feature)
+                 (-> feature
+                   (:_tiles)
+                   (vec))
+                 (:xml %))))))
+      (*add-metadata-extract-records* tx extractset-id (map #(-> % :feature :_tiles) rendered-features)))
     (count rendered-features)))
 
 (defn transform-and-add-extract [tx dataset feature-type delivery-id extract-type features]
