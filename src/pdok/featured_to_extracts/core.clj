@@ -134,7 +134,7 @@
         (pg/batch-insert
           tx
           (pg/qualified-table config/extract-schema (str dataset "_" extract-type))
-          [:delivery_id :feature_id :feature_type, :version, :valid_from, :valid_to, :publication, :tiles, :xml]
+          [:min_delivery_id :feature_id :feature_type, :version, :valid_from, :valid_to, :publication, :tiles, :xml]
           (->> rendered-features
             (map
               #(let [feature (:feature %)]
@@ -170,41 +170,26 @@
         (log/error "Error creating extracts" error)
         nil))))
 
-(defn- delete-version-with-valid-from-sql [table]
-  (str "DELETE FROM " (pg/qualified-table config/extract-schema table)
-       " WHERE version = ? AND valid_from = ? AND id IN (SELECT id FROM " (pg/qualified-table config/extract-schema table)
-       " WHERE version = ? AND valid_from = ? ORDER BY id ASC LIMIT 1)"))
-
-
-
-(defn delete-by-version-sql [table version-count]
-  (str "DELETE FROM " (pg/qualified-table config/extract-schema table)
-                   " WHERE VERSION IN ("
-                   (clojure.string/join "," (repeat version-count "?" ))  ") "))
-
-(defn- jdbc-delete-versions-new-style [tx table versions]
-  (try
-    (pg/execute tx (delete-by-version-sql table (count versions)) versions)
-    (log/debug (delete-by-version-sql table (count versions)))
-     (catch SQLException e
-    (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-    (throw e))))
-
-(defn- jdbc-delete-versions-old-style [tx table versions]
-  "([version valid_from] ... )"
-    (when (not= nil versions)
-      (try
-        (pg/batch-delete tx (pg/qualified-table config/extract-schema table) [:version] versions)
-        (catch SQLException e
-          (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-          (throw e))))
-)
-
-(defn- delete-extracts-with-version [db dataset feature-type extract-type versions unique-versions ]
+(defn- delete-extracts-with-version [tx dataset feature-type delivery-id extract-type versions]
   (let [table (str dataset "_" extract-type)]
-    (if unique-versions
-      (jdbc-delete-versions-new-style db table versions)
-      (jdbc-delete-versions-old-style db table versions))))
+    (try
+      (doseq [versions (partition-all 100 versions)] 
+        (pg/execute
+          tx
+          (str
+            "update "
+            (pg/qualified-table config/extract-schema (str dataset "_" extract-type))
+            " set max_delivery_id = ? "
+            "where version in ("
+            (->> versions
+              (map (constantly "?"))
+              (str/join ", "))
+            ")")
+          (cons delivery-id versions)))
+      (catch SQLException e
+        (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
+        (throw e)))
+    (log/debug "Extract records deleted: " (count versions))))
 
 (defn changelog->change-inserts [record]
   (condp = (:_action record)
@@ -248,16 +233,16 @@
                :params (filterv identity [dataset from-date to-date])}
         insert {:msg "Delivery not yet present in database -> Adding delivery info to database"
                 :q (str
-                     "insert into " config/extract-schema ".delivery(dataset, from_date, to_date) "
-                     "values(?, ?, ?) "
+                     "insert into " config/extract-schema ".delivery(dataset, from_date, to_date, external_id) "
+                     "values(?, ?, ?, ?) "
                      "returning id")
-                :params [dataset from-date to-date]}]
+                :params [dataset from-date to-date (java.util.UUID/randomUUID)]}]
     (let [delivery-id (run fetch)]
       (if delivery-id
         delivery-id
         (run insert)))))
 
-(defn- process-changes [tx dataset collection delivery-info extract-types delta-types changes unique-versions]
+(defn- process-changes [tx dataset collection delivery-info extract-types delta-types changes]
   (let [batch-size 10000
         parts (partition-all batch-size changes)
         delta-type-names (->> delta-types (keys) (map name) (vector))
@@ -284,7 +269,7 @@
                                               :previous (:xml previous-version)
                                               :current current-version-xml}))))]
                   (transform-and-add-delta tx dataset collection delivery-id extract-type delta-type-info delta-records))))
-            (delete-extracts-with-version tx dataset collection extract-type deleted-features unique-versions)
+            (delete-extracts-with-version tx dataset collection delivery-id extract-type deleted-features)
             (when (zero? (mod i 10))
               (log/info "Creating extracts, processed:" (* i batch-size))))
           (recur (inc i) (rest remaining)))))
@@ -319,7 +304,7 @@
         lines (drop 2 lines)]
     [version meta-info (map make-change-record lines)]))
 
-(defn update-extracts [dataset extract-types delta-types changelog-stream unique-versions]
+(defn update-extracts [dataset extract-types delta-types changelog-stream]
   (let [[version meta-info changes] (parse-changelog changelog-stream)
         delivery-info (:delivery-info meta-info)
         collection (-> meta-info :collection .toLowerCase)]
@@ -340,7 +325,7 @@
             (log/info "All templates found")
             (when (seq? changes)
               (let [tx (pg/begin-transaction config/db)]
-                (process-changes tx dataset collection delivery-info extract-types delta-types changes unique-versions)
+                (process-changes tx dataset collection delivery-info extract-types delta-types changes)
                 (pg/commit-transaction tx)))
             {:status "ok" :collection collection}))))))
 

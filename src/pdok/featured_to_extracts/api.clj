@@ -47,7 +47,6 @@
    (s/optional-key :format)   (s/enum "csv" "zip")
    :extractTypes              [s/Str]
    (s/optional-key :deltaTypes) {(s/pred keyword?) {:featureRootTag s/Str}}
-   (s/optional-key :uniqueVersions) s/Bool
    (s/optional-key :callback) URI})
 
 (def TemplateRequest
@@ -93,8 +92,7 @@
         extract-types (:extractTypes request)
         delta-types (:deltaTypes request)
         zipped? (if (nil? (:format request)) true (= (:format request) "zip"))
-        [file err] (download-file (:changeLog request) zipped?)
-        unique-versions (:uniqueVersions request)]
+        [file err] (download-file (:changeLog request) zipped?)]
     (if-not file
       (let [msg (if err (str err) "Something went wrong downloading")
             error-stats (merge request {:status "error" :msg msg})]
@@ -104,7 +102,7 @@
       (try
         (with-open [in (io/input-stream file)]
           (let [_ (log/info "Processing file:" (:changeLog request))
-                result (core/update-extracts dataset extract-types delta-types in unique-versions)
+                result (core/update-extracts dataset extract-types delta-types in)
                 run-stats (merge request result)]
             (swap! stats assoc-in [:processing worker-id] nil)
             (stats-on-callback callback-chan request run-stats)))
@@ -116,8 +114,7 @@
             (log/warn e error-stats)
             (swap! stats assoc-in [:processing worker-id] nil)
             (stats-on-callback callback-chan request error-stats)))
-        (finally (io/delete-file file)))
-      )))
+        (finally (io/delete-file file))))))
 
 (defn create-workers [stats callback-chan process-chan]
   (let [factory-fn (fn [worker-id]
