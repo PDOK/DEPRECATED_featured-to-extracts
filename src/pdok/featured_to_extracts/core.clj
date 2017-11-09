@@ -40,15 +40,6 @@
                          :feature (-> % (dissoc :previous) (dissoc :current))
                          :xml (*render-template* "_delta" (merge delta-type-info %))) delta-records)]))
 
-(defn- jdbc-insert-delta [tx table entries]
-  (when (seq entries)
-    (try
-      (pg/batch-insert tx (pg/qualified-table config/extract-schema table)
-                       [:delivery_id :feature_id :feature_type, :tiles, :xml] entries)
-      (catch SQLException e
-        (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-        (throw e)))))
-
 (defn get-or-add-deltaset [tx dataset extract-type]
   "return id"
   (let [query (str "SELECT id FROM " deltaset-table " WHERE name = ? AND delta_type = ?")
@@ -71,15 +62,6 @@
     {}))
 
 (def ^:dynamic *get-or-add-deltaset* get-or-add-deltaset)
-
-(defn- jdbc-insert-extract [tx table entries]
-  (when (seq entries)
-    (try
-      (pg/batch-insert tx (pg/qualified-table config/extract-schema table)
-                       [:delivery_id :feature_id :feature_type, :version, :valid_from, :valid_to, :publication, :tiles, :xml] entries)
-      (catch SQLException e
-        (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-        (throw e)))))
 
 (defn get-or-add-extractset [tx dataset extract-type]
   "return id"
@@ -105,36 +87,29 @@
 
 (def ^:dynamic *add-metadata-extract-records* add-metadata-extract-records)
 
-(defn map-to-columns [features]
-  (map
-    #(vector
-       (:feature-type %)
-       (:_version (:feature %))
-       (:_valid_from (:feature %))
-       (:_valid_to (:feature %))
-       (:LV-publicatiedatum (:feature %))
-       (vec (:_tiles (:feature %)))
-       (:xml %))
-    features))
-
 (defn add-delta-records [tx dataset delivery-id extract-type rendered-features]
   "Inserts the xml-features and tile-set in an delta schema based on dataset, extract-type, version and feature-type,
    if schema or table doesn't exists it will be created. Most"
   (let [deltaset-id (*get-or-add-deltaset* tx dataset extract-type)]
-    (jdbc-insert-delta
-      tx
-      (str "delta_" dataset "_" extract-type)
-      (->> rendered-features
-        (map 
-          #(let [feature (:feature %)]
-             (vector
-               delivery-id
-               (:_id feature)
-               (:feature-type %)
-               (-> feature
-                 (:_tiles)
-                 (vec))
-               (:xml %))))))
+    (try
+      (pg/batch-insert
+        tx
+        (pg/qualified-table config/extract-schema (str "delta_" dataset "_" extract-type))
+        [:delivery_id :feature_id :feature_type, :tiles, :xml]
+        (->> rendered-features
+          (map 
+            #(let [feature (:feature %)]
+               (vector
+                 delivery-id
+                 (:_id feature)
+                 (:feature-type %)
+                 (-> feature
+                   (:_tiles)
+                   (vec))
+                 (:xml %))))))
+      (catch SQLException e
+        (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
+        (throw e)))
     (count rendered-features)))
 
 (defn transform-and-add-delta [tx dataset collection delivery-id extract-type delta-type-info delta-records]
@@ -154,26 +129,31 @@
   "Inserts the xml-features and tile-set in an extract schema based on dataset, extract-type, version and feature-type,
    if schema or table doesn't exists it will be created."
   (let [extractset-id (*get-or-add-extractset* tx dataset extract-type)]
-    (do
-      (jdbc-insert-extract
-        tx
-        (str dataset "_" extract-type)
-        (->> rendered-features
-          (map
-            #(let [feature (:feature %)]
-               (vector
-                 delivery-id
-                 (:_id feature)
-                 (:feature-type %)
-                 (:_version feature)
-                 (:_valid_from feature)
-                 (:_valid_to feature)
-                 (:LV-publicatiedatum feature)
-                 (-> feature
-                   (:_tiles)
-                   (vec))
-                 (:xml %))))))
-      (*add-metadata-extract-records* tx extractset-id (map #(-> % :feature :_tiles) rendered-features)))
+    (try
+      (do
+        (pg/batch-insert
+          tx
+          (pg/qualified-table config/extract-schema (str dataset "_" extract-type))
+          [:delivery_id :feature_id :feature_type, :version, :valid_from, :valid_to, :publication, :tiles, :xml]
+          (->> rendered-features
+            (map
+              #(let [feature (:feature %)]
+                 (vector
+                   delivery-id
+                   (:_id feature)
+                   (:feature-type %)
+                   (:_version feature)
+                   (:_valid_from feature)
+                   (:_valid_to feature)
+                   (:LV-publicatiedatum feature)
+                   (-> feature
+                     (:_tiles)
+                     (vec))
+                   (:xml %))))))
+        (*add-metadata-extract-records* tx extractset-id (map #(-> % :feature :_tiles) rendered-features)))
+      (catch SQLException e
+        (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
+        (throw e)))
     (count rendered-features)))
 
 (defn transform-and-add-extract [tx dataset feature-type delivery-id extract-type features]
