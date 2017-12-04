@@ -8,7 +8,8 @@
             [clojure.tools.logging :as log]
             [clojure.string :as str]
             [clojure.java.io :as io]
-            [clj-time [coerce :as tc] [format :as tf]])
+            [clj-time [coerce :as tc] [format :as tf]]
+            [pdok.featured.tiles :as tiles])
   (:gen-class)
   (:import (java.sql SQLException)
            (java.util UUID)
@@ -305,11 +306,30 @@
         lines (drop 2 lines)]
     [version meta-info (map make-change-record lines)]))
 
+(defn- all-values [x]
+  (cond
+    (map? x) (->> x 
+               (vals)
+               (all-values))
+    (coll? x) (->> x 
+                (map all-values)
+                (flatten))
+    :else x))
+
+(defn- calculate-tiles [feature]
+  (apply clojure.set/union
+         (->> feature
+           (all-values)
+           (filter #(instance? pdok.featured.GeometryAttribute %))
+           (map tiles/nl))))
+
 (defn update-extracts [dataset extract-types delta-types changelog-stream]
   (let [[version meta-info changes] (parse-changelog changelog-stream)
         delivery-info (:delivery-info meta-info)
         collection (-> meta-info :collection .toLowerCase)]
-    (if-not (= version "pdok-featured-changelog-v2")
+    (if-not (or 
+              (= version "pdok-featured-changelog-v2")
+              (= version "pdok-featured-changelog-v3"))
       {:status "error" :msg (str "unknown changelog version" version)}
       (let [missing-templates (->> extract-types 
                                 (map #(template/template-key dataset % collection))
@@ -326,7 +346,16 @@
             (log/info "All templates found")
             (when (seq? changes)
               (let [tx (pg/begin-transaction config/db)]
-                (process-changes tx dataset collection delivery-info extract-types delta-types changes)
+                (process-changes
+                  tx
+                  dataset
+                  collection
+                  delivery-info
+                  extract-types
+                  delta-types
+                  (if (= version "pdok-featured-changelog-v3")
+                    (map #(assoc % :_tiles (calculate-tiles %)) changes)
+                    changes))
                 (pg/commit-transaction tx)))
             {:status "ok" :collection collection}))))))
 
