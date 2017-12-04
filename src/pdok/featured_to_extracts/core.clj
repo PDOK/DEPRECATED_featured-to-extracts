@@ -11,7 +11,8 @@
             [clj-time [coerce :as tc] [format :as tf]])
   (:gen-class)
   (:import (java.sql SQLException)
-           (java.util UUID)))
+           (java.util UUID)
+           (java.util.zip ZipInputStream)))
 
 (def ^{:private true} deltaset-table
   (pg/qualified-table config/extract-schema "deltaset"))
@@ -329,12 +330,23 @@
                 (pg/commit-transaction tx)))
             {:status "ok" :collection collection}))))))
 
-(defn -main [template-location dataset extract-type & args]
+(defn- do-update-extracts [template-location dataset extract-type delta-feature-root-tag changelog-file]
   (let [templates-with-metadata (template/templates-with-metadata dataset template-location)]
     (if-not (some false? (map template/add-or-update-template templates-with-metadata))
-      (let [changelog-file (first args)]
-        (println (update-extracts dataset [extract-type] {} changelog-file false)))
-      (println "could not load template(s)"))))
+      (println (update-extracts
+                 dataset
+                 [extract-type]
+                 (if delta-feature-root-tag
+                   {(keyword extract-type) {:featureRootTag delta-feature-root-tag}}
+                   {})
+                 (doto 
+                   (ZipInputStream. (io/input-stream changelog-file))
+                   (.getNextEntry)))))
+      (println "could not load template(s)")))
 
-;(with-open [s (file-stream ".test-files/new-features-single-collection-100000.json")]
-;  (time (last (features-from-package-stream s))))
+(defn -main [& args]
+  (condp = (count args)
+    4 (let [[template-location dataset extract-type changelog-file] args]
+        (do-update-extracts template-location dataset extract-type {} changelog-file))
+    5 (apply do-update-extracts args)
+    (println "No arguments provided. Expected: template-location dataset extract-type [delta-feature-root-tag] changelog-file")))
