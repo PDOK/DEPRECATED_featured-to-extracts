@@ -8,22 +8,21 @@
             [clojure.tools.logging :as log]
             [clojure.string :as str]
             [clojure.java.io :as io]
-            [clj-time [coerce :as tc] [format :as tf]])
+            [clj-time [coerce :as tc] [format :as tf]]
+            [pdok.featured.tiles :as tiles])
   (:gen-class)
   (:import (java.sql SQLException)
-           (java.util UUID)))
+           (java.util UUID)
+           (java.util.zip ZipInputStream)))
 
-(def ^{:private true} extract-schema
-  (pg/quoted (:schema config/db)))
-
-(defn- qualified-table [table]
-  (str extract-schema "." (pg/quoted table)))
+(def ^{:private true} deltaset-table
+  (pg/qualified-table config/extract-schema "deltaset"))
 
 (def ^{:private true} extractset-table
-  (qualified-table "extractset"))
+  (pg/qualified-table config/extract-schema "extractset"))
 
 (def ^{:private true} extractset-area-table
-  (qualified-table "extractset_area"))
+  (pg/qualified-table config/extract-schema "extractset_area"))
 
 (def ^:dynamic *render-template* m/render)
 
@@ -32,25 +31,47 @@
   (if (empty? features)
     [nil nil]
     (let [template-key (template/template-key dataset extract-type feature-type)]
-      [nil (map #(vector feature-type (:_version %) (:_tiles %) (*render-template* template-key %)
-                         (:_valid_from %) (:_valid_to %) (:lv-publicatiedatum %)) features)])))
+      [nil (map #(hash-map :feature-type feature-type :feature % :xml (*render-template* template-key %)) features)])))
 
-(defn- jdbc-insert-extract [tx table entries]
-  (when (seq entries)
-    (try
-      (pg/batch-insert tx (qualified-table table)
-                       [:feature_type, :version, :valid_from, :valid_to, :publication, :tiles, :xml] entries)
-      (catch SQLException e
-        (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-        (throw e)))))
 
-(defn get-or-add-extractset [tx dataset extract-type]
+(defn features-for-delta [dataset feature-type extract-type delta-type-info delta-records]
+  "Returns the rendered representation of the collection of features for a given feature-type inclusive tiles-set"
+  (if (empty? delta-records)
+    [nil nil]
+    [nil (map #(hash-map :feature-type feature-type
+                         :feature (-> % (dissoc :previous) (dissoc :current))
+                         :xml (*render-template* "_delta" (merge delta-type-info %))) delta-records)]))
+
+(defn get-or-add-deltaset [tx dataset extract-type]
   "return id"
-  (let [query (str "SELECT id FROM " extractset-table " WHERE name = ? AND extract_type = ?")
+  (let [query (str "SELECT id FROM " deltaset-table " WHERE name = ? AND delta_type = ?")
         result (j/query tx [query dataset extract-type])]
     (if (empty? result)
       (do
-        (j/query tx [(str "SELECT " extract-schema ".add_extractset(?, ?)") dataset extract-type])
+        (j/query tx [(str "SELECT " config/extract-schema ".add_deltaset(?, ?)") dataset extract-type])
+        (get-or-add-deltaset tx dataset extract-type))
+      (:id (first result)))))
+
+(defn retrieve-previous-versions [tx dataset collection extract-type versions]
+  (if (seq versions)
+    (let [table (str dataset "_" extract-type)
+          query (str "SELECT * FROM " (pg/qualified-table config/extract-schema table) "WHERE version "
+                     " IN (" (->> versions (map (constantly "?")) (str/join ", ")) ")")
+          result (j/query tx (cons query versions))]
+      (apply
+        hash-map
+        (mapcat #(list (:version %) (select-keys % [:tiles :xml])) result)))
+    {}))
+
+(def ^:dynamic *get-or-add-deltaset* get-or-add-deltaset)
+
+(defn get-or-add-extractset [tx dataset extract-type]
+  "return id"
+    (let [query (str "SELECT id FROM " extractset-table " WHERE name = ? AND extract_type = ?")
+        result (j/query tx [query dataset extract-type])]
+    (if (empty? result)
+      (do
+        (j/query tx [(str "SELECT " config/extract-schema ".add_extractset(?, ?)") dataset extract-type])
         (get-or-add-extractset tx dataset extract-type))
       (:id (first result)))))
 
@@ -62,83 +83,115 @@
       (if (empty? (j/query tx [query extractset-id area-id]))
         (pg/insert tx extractset-area-table [:extractset_id :area_id] [extractset-id area-id])))))
 
-(defn- tiles-from-feature [[type version tiles & more]]
-  tiles)
-
-(defn add-metadata-extract-records [tx extractset-id rendered-features]
-  (let [tiles (reduce clojure.set/union (map tiles-from-feature rendered-features))]
+(defn add-metadata-extract-records [tx extractset-id tiles]
+  (let [tiles (reduce clojure.set/union tiles)]
     (add-extractset-area tx extractset-id tiles)))
 
 (def ^:dynamic *add-metadata-extract-records* add-metadata-extract-records)
 
-(defn- tranform-feature-for-db [[feature-type version tiles xml-feature valid-from valid-to publication-date]]
-  [feature-type version valid-from valid-to publication-date (vec tiles) xml-feature])
+(defn add-delta-records [tx dataset delivery-id extract-type rendered-features]
+  "Inserts the xml-features and tile-set in an delta schema based on dataset, extract-type, version and feature-type,
+   if schema or table doesn't exists it will be created. Most"
+  (let [deltaset-id (*get-or-add-deltaset* tx dataset extract-type)]
+    (try
+      (pg/batch-insert
+        tx
+        (pg/qualified-table config/extract-schema (str "delta_" dataset "_" extract-type))
+        [:delivery_id :feature_id :feature_type, :tiles, :xml]
+        (->> rendered-features
+          (map 
+            #(let [feature (:feature %)]
+               (vector
+                 delivery-id
+                 (:_id feature)
+                 (:feature-type %)
+                 (-> feature
+                   (:_tiles)
+                   (vec))
+                 (:xml %))))))
+      (catch SQLException e
+        (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
+        (throw e)))
+    (count rendered-features)))
 
-(defn add-extract-records [tx dataset extract-type rendered-features]
+(defn transform-and-add-delta [tx dataset collection delivery-id extract-type delta-type-info delta-records]
+  (let [[error features-for-delta] (features-for-delta dataset collection extract-type delta-type-info delta-records)]
+    (if (nil? error)
+      (if (nil? features-for-delta)
+        {}
+        (let [n-inserted-records (add-delta-records tx dataset delivery-id extract-type features-for-delta)]
+          (log/debug "Delta records inserted: " n-inserted-records
+                     (str/join "-" (list dataset collection extract-type)))
+          features-for-delta))
+      (do
+        (log/error "Error creating extracts" error)
+        nil))))
+
+(defn add-extract-records [tx dataset delivery-id extract-type rendered-features]
   "Inserts the xml-features and tile-set in an extract schema based on dataset, extract-type, version and feature-type,
    if schema or table doesn't exists it will be created."
   (let [extractset-id (*get-or-add-extractset* tx dataset extract-type)]
-    (do
-      (jdbc-insert-extract tx (str dataset "_" extract-type) (map tranform-feature-for-db rendered-features))
-      (*add-metadata-extract-records* tx extractset-id rendered-features))
+    (try
+      (do
+        (pg/batch-insert
+          tx
+          (pg/qualified-table config/extract-schema (str dataset "_" extract-type))
+          [:min_delivery_id :feature_id :feature_type, :version, :valid_from, :valid_to, :publication, :tiles, :xml]
+          (->> rendered-features
+            (map
+              #(let [feature (:feature %)]
+                 (vector
+                   delivery-id
+                   (:_id feature)
+                   (:feature-type %)
+                   (:_version feature)
+                   (:_valid_from feature)
+                   (:_valid_to feature)
+                   (:LV-publicatiedatum feature)
+                   (-> feature
+                     (:_tiles)
+                     (vec))
+                   (:xml %))))))
+        (*add-metadata-extract-records* tx extractset-id (map #(-> % :feature :_tiles) rendered-features)))
+      (catch SQLException e
+        (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
+        (throw e)))
     (count rendered-features)))
 
-(defn transform-and-add-extract [tx dataset feature-type extract-type features]
+(defn transform-and-add-extract [tx dataset feature-type delivery-id extract-type features]
   (let [[error features-for-extract] (features-for-extract dataset feature-type extract-type features)]
     (if (nil? error)
       (if (nil? features-for-extract)
-        {:status "ok" :count 0}
-        (let [n-inserted-records (add-extract-records tx dataset extract-type features-for-extract)]
+        {}
+        (let [n-inserted-records (add-extract-records tx dataset delivery-id extract-type features-for-extract)]
           (log/debug "Extract records inserted: " n-inserted-records
                      (str/join "-" (list dataset feature-type extract-type)))
-          {:status "ok" :count n-inserted-records}))
+         (let [ m1 (mapcat #(list (:_version (:feature %))   (:xml %)) features-for-extract)]
+          (apply hash-map m1 ))))
       (do
         (log/error "Error creating extracts" error)
-        {:status "error" :msg error :count 0}))))
+        nil))))
 
-(defn- delete-version-with-valid-from-sql [table]
-  (str "DELETE FROM " (qualified-table table)
-       " WHERE version = ? AND valid_from = ? AND id IN (SELECT id FROM " (qualified-table table)
-       " WHERE version = ? AND valid_from = ? ORDER BY id ASC LIMIT 1)"))
-
-
-
-(defn delete-by-version-sql [table version-count]
-  (str "DELETE FROM " (qualified-table table)
-                   " WHERE VERSION IN ("
-                   (clojure.string/join "," (repeat version-count "?" ))  ") "))
-
-(defn- jdbc-delete-versions-new-style [tx table versions]
-  (try
-    (pg/execute-query tx (delete-by-version-sql table (count versions)) (map first versions))
-    (log/debug (delete-by-version-sql table (count versions)))
-     (catch SQLException e
-    (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-    (throw e))))
-
-
-(defn- jdbc-delete-versions-old-style [tx table versions]
-  "([version valid_from] ... )"
-  (let [versions-only (map #(take 1 %) (filter (fn [[_ valid-from]] (not valid-from)) versions))
-        with-valid-from (map (fn [[ov vf]] [ov vf ov vf]) (filter (fn [[_ valid-from]] valid-from) versions))]
-    (when (seq versions-only)
-      (try
-        (pg/batch-delete tx (qualified-table table) [:version] versions-only)
-        (catch SQLException e
-          (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-          (throw e))))
-    (when (seq with-valid-from)
-      (try
-        (pg/execute-batch-query tx (delete-version-with-valid-from-sql table) with-valid-from)
-        (catch SQLException e
-          (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
-          (throw e))))))
-
-(defn- delete-extracts-with-version [db dataset feature-type extract-type unique-versions versions]
+(defn- delete-extracts-with-version [tx dataset feature-type delivery-id extract-type versions]
   (let [table (str dataset "_" extract-type)]
-    (if unique-versions
-      (jdbc-delete-versions-new-style db table versions)
-      (jdbc-delete-versions-old-style db table versions))))
+    (try
+      (doseq [versions (partition-all 100 versions)] 
+        (pg/execute
+          tx
+          (str
+            "update "
+            (pg/qualified-table config/extract-schema (str dataset "_" extract-type))
+            " set max_delivery_id = ? "
+            "where version in ("
+            (->> versions
+              (map (constantly "?"))
+              (str/join ", "))
+            ")")
+          (cons delivery-id versions)))
+      (catch SQLException e
+        (log/with-logs ['pdok.featured.extracts :error :error] (j/print-sql-exception-chain e))
+        (throw e)))
+    (log/debug "Extract records deleted: " (count versions))))
 
 (defn changelog->change-inserts [record]
   (condp = (:_action record)
@@ -149,30 +202,106 @@
 
 (defn changelog->deletes [record]
   (condp = (:_action record)
-    "delete" [(:_previous_version record)]
-    "change" [(:_previous_version record) (:_valid_from record)]
-    "close" [(:_previous_version record) (:_valid_from record)]
+    "delete" (:_previous_version record)
+    "change" (:_previous_version record)
+    "close" (:_previous_version record)
     nil))
 
 (def ^:dynamic *initialized-collection?* m/registered?)
 
-(defn- process-changes [tx dataset collection extract-types changes unique-versions]
+(defn- get-or-allocate-delivery-id [dataset {from-date :from-date to-date :to-date}]
+  (let [run (fn [tx {msg :msg q :q params :params}]
+              (log/info msg)
+              (log/debug "query:" q)
+              (log/debug "params:" params)
+              (let [result (-> 
+                             (pg/execute-query
+                               tx
+                               q
+                               [:delivery-id]
+                               params)
+                             (first)
+                             (:delivery-id))]
+                (log/debug "result:" result)
+                result))
+        fetch {:msg "Fetching delivery-id from database"
+               :q (str
+                    "select id from " config/extract-schema ".delivery "
+                    "where dataset = ? "
+                    (if from-date
+                      "and from_date = ? "
+                      "and from_date is null ")
+                    "and to_date = ?")
+               :params (filterv identity [dataset from-date to-date])}
+        insert {:msg "Delivery not yet present in database -> Adding delivery info to database"
+                :q (str
+                     "insert into " config/extract-schema ".delivery(dataset, from_date, to_date, external_id) "
+                     "values(?, ?, ?, ?) "
+                     "returning id")
+                :params [dataset from-date to-date (java.util.UUID/randomUUID)]}]
+    (loop [tx (pg/begin-transaction config/db)
+           attempts-left 4]
+      (let [delivery-id (run tx fetch)]
+        (if delivery-id
+          (do
+            (pg/commit-transaction tx)
+            (pg/close-connection tx)
+            delivery-id)
+          (let [{delivery-id :delivery-id 
+                 exception :exception} (try 
+                                         {:delivery-id (run tx insert)} 
+                                         (catch Exception e {:exception e}))]
+            (if delivery-id
+              (do
+                (pg/commit-transaction tx)
+                (pg/close-connection tx)
+                delivery-id)
+              (do
+                (pg/rollback-transaction tx)
+                (if (zero? attempts-left)
+                  (do
+                    (pg/close-connection tx)
+                    (throw (ex-info
+                             "Failed to get or allocate delivery id"
+                             {:from-date from-date 
+                              :to-date to-date
+                              :exception exception})))
+                  (do
+                    (log/error exception (str "Failed to store delivery info (attempts left: " attempts-left ")"))
+                    (recur tx (dec attempts-left))))))))))))
+
+(defn- process-changes [tx dataset collection delivery-info extract-types delta-types changes]
   (let [batch-size 10000
-        parts (partition-all batch-size changes)]
-    (log/info "Creating extracts for" dataset collection extract-types)
+        parts (partition-all batch-size changes)
+        delta-type-names (->> delta-types (keys) (map name) (vector))
+        delivery-id (get-or-allocate-delivery-id dataset delivery-info)]
+    (log/info "Creating extracts for" dataset collection extract-types "and deltas for" delta-type-names)
     (doseq [extract-type extract-types]
       (loop [i 1
              remaining parts]
-        (let [records (first remaining)]
-          (when records
-            (transform-and-add-extract tx dataset collection extract-type
-                                       (filter (complement nil?) (map changelog->change-inserts records)))
-            (delete-extracts-with-version tx dataset collection extract-type unique-versions
-                                          (filter (complement nil?) (map changelog->deletes records)))
-            (if (= 0 (mod i 10))
-              (log/info "Creating extracts, processed:" (* i batch-size)))
-            (recur (inc i) (rest remaining))))))
-    (log/info "Finished " dataset collection extract-types)))
+        (when-let [records (first remaining)]
+          (let [added-features (remove nil? (map changelog->change-inserts records))
+                deleted-features (remove nil? (map changelog->deletes records))]
+            (let [current-versions-xml (transform-and-add-extract tx dataset collection delivery-id extract-type added-features)]
+              (if-let [delta-type-info (-> extract-type keyword delta-types)]
+                (let [previous-versions (retrieve-previous-versions tx dataset collection extract-type deleted-features)
+                      delta-records (->> records
+                                      (map
+                                        #(let [previous-version (->> % :_previous_version (get previous-versions))
+                                               current-version-xml (->> % :_version (get current-versions-xml))]
+                                           (merge
+                                             %
+                                             {:_tiles (clojure.set/union
+                                                        (:_tiles %)
+                                                        (:tiles previous-version))
+                                              :previous (:xml previous-version)
+                                              :current current-version-xml}))))]
+                  (transform-and-add-delta tx dataset collection delivery-id extract-type delta-type-info delta-records))))
+            (delete-extracts-with-version tx dataset collection delivery-id extract-type deleted-features)
+            (when (zero? (mod i 10))
+              (log/info "Creating extracts, processed:" (* i batch-size))))
+          (recur (inc i) (rest remaining)))))
+    (log/info "Finished" dataset collection extract-types delta-type-names)))
 
 (def date-time-formatter (tf/formatters :date-time-parser))
 (defn parse-time
@@ -198,14 +327,35 @@
   keys: feature-id,action,version,tiles,valid-from,old-version,old-tiles,old-valid-from,feature"
   (let [lines (line-seq (io/reader in-stream))
         version (first lines)
-        collection (.toLowerCase (:collection (t/from-json (second lines))))
-        ;drop collection info + header
+        meta-info (t/from-json (second lines))
+        ; drop header
         lines (drop 2 lines)]
-    [version collection (map make-change-record lines)]))
+    [version meta-info (map make-change-record lines)]))
 
-(defn update-extracts [dataset extract-types changelog-stream unique-versions]
-  (let [[version collection changes] (parse-changelog changelog-stream)]
-    (if-not (= version "pdok-featured-changelog-v2")
+(defn- all-values [x]
+  (cond
+    (map? x) (->> x 
+               (vals)
+               (all-values))
+    (coll? x) (->> x 
+                (map all-values)
+                (flatten))
+    :else x))
+
+(defn- calculate-tiles [feature]
+  (apply clojure.set/union
+         (->> feature
+           (all-values)
+           (filter #(instance? pdok.featured.GeometryAttribute %))
+           (map tiles/nl))))
+
+(defn update-extracts [dataset extract-types delta-types changelog-stream]
+  (let [[version meta-info changes] (parse-changelog changelog-stream)
+        delivery-info (:delivery-info meta-info)
+        collection (-> meta-info :collection .toLowerCase)]
+    (if-not (or 
+              (= version "pdok-featured-changelog-v2")
+              (= version "pdok-featured-changelog-v3"))
       {:status "error" :msg (str "unknown changelog version" version)}
       (let [missing-templates (->> extract-types 
                                 (map #(template/template-key dataset % collection))
@@ -222,16 +372,37 @@
             (log/info "All templates found")
             (when (seq? changes)
               (let [tx (pg/begin-transaction config/db)]
-                (process-changes tx dataset collection extract-types changes unique-versions)
-                (pg/commit-transaction tx)))
+                (process-changes
+                  tx
+                  dataset
+                  collection
+                  delivery-info
+                  extract-types
+                  delta-types
+                  (if (= version "pdok-featured-changelog-v3")
+                    (map #(assoc % :_tiles (calculate-tiles %)) changes)
+                    changes))
+                (pg/commit-transaction tx)
+                (pg/close-connection tx)))
             {:status "ok" :collection collection}))))))
 
-(defn -main [template-location dataset extract-type & args]
+(defn- do-update-extracts [template-location dataset extract-type delta-feature-root-tag changelog-file]
   (let [templates-with-metadata (template/templates-with-metadata dataset template-location)]
     (if-not (some false? (map template/add-or-update-template templates-with-metadata))
-      (let [changelog-file (first args)]
-        (println (update-extracts dataset [extract-type] changelog-file false)))
-      (println "could not load template(s)"))))
+      (println (update-extracts
+                 dataset
+                 [extract-type]
+                 (if delta-feature-root-tag
+                   {(keyword extract-type) {:featureRootTag delta-feature-root-tag}}
+                   {})
+                 (doto 
+                   (ZipInputStream. (io/input-stream changelog-file))
+                   (.getNextEntry)))))
+      (println "could not load template(s)")))
 
-;(with-open [s (file-stream ".test-files/new-features-single-collection-100000.json")]
-;  (time (last (features-from-package-stream s))))
+(defn -main [& args]
+  (condp = (count args)
+    4 (let [[template-location dataset extract-type changelog-file] args]
+        (do-update-extracts template-location dataset extract-type {} changelog-file))
+    5 (apply do-update-extracts args)
+    (println "No arguments provided. Expected: template-location dataset extract-type [delta-feature-root-tag] changelog-file")))

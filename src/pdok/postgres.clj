@@ -8,7 +8,7 @@
   (:import (clojure.lang IMeta IPersistentList IPersistentMap IPersistentSet IPersistentVector Keyword PersistentVector)
            (com.vividsolutions.jts.geom Geometry)
            (com.vividsolutions.jts.io WKTWriter)
-           (java.sql Array Connection Date PreparedStatement Timestamp Types)
+           (java.sql Array Connection Date PreparedStatement Timestamp Types ResultSet)
            (java.util Calendar TimeZone UUID)
            (org.joda.time DateTime DateTimeZone LocalDate LocalDateTime)
            (pdok.featured GeometryAttribute NilAttribute)))
@@ -88,7 +88,7 @@
       (j/set-parameter (into-array v) s i)))
   IPersistentSet
   (set-parameter [v ^PreparedStatement s ^long i]
-    (j/set-parameter (into [] v) s i)))
+    (j/set-parameter (vec v) s i)))
 
 (extend-protocol j/ISQLParameter
   (Class/forName "[Ljava.lang.Long;")
@@ -127,7 +127,7 @@
     (LocalDateTime. ^Timestamp v ^DateTimeZone serverTimeZone))
   Array
   (result-set-read-column [v _ _]
-    (into [] (.getArray v))))
+    (vec (.getArray v))))
 
 (def geometry-type "geometry")
 
@@ -167,9 +167,17 @@
         _ (.setAutoCommit connection false)]
     {:connection connection}))
 
+(defn close-connection [tx]
+  (with-open [connection (j/get-connection tx)]
+    (.close connection)))
+
 (defn commit-transaction [tx]
   (with-open [connection (j/get-connection tx)]
     (.commit connection)))
+
+(defn rollback-transaction [tx]
+  (with-open [connection (j/get-connection tx)]
+    (.rollback connection)))
 
 (defn execute-batch-query [tx ^String query batch]
   (with-open [stmt (let [^Connection c (:connection tx)] (.prepareStatement c query))]
@@ -191,11 +199,45 @@
 (defn batch-delete [tx qualified-table columns batch]
   (let [query (str "DELETE FROM " qualified-table
                    " WHERE " (->> columns (map sql-identifier) (map #(str % " = ?")) (str/join " AND ")))]
-    (execute-batch-query tx query batch)))
+    (execute-batch-query tx query (map vector batch ))))
 
-(defn execute-query
+(defn result-seq [^java.sql.ResultSet rs & keys]
+  (if (.next rs)
+    (seq
+      (cons
+        (->> keys
+          (map
+            (fn [idx key]
+              (let [value (.getObject rs ^int idx)]
+                {key (if
+                       (instance? java.sql.Array value)
+                       (seq (.getArray ^java.sql.Array value))
+                       value)}))
+            (map inc (range)))
+          (reduce merge {}))
+        (apply
+          (partial result-seq rs)
+          keys)))
+    (list)))
+
+(defn ^ResultSet execute-query
+  ([tx ^String query columns]
+    (execute-query tx query columns []))
+  ([tx ^String query columns values]
+    (with-open [stmt (let [^Connection c (:connection tx)] (.prepareStatement c query))]
+      (doseq [value (map-indexed vector values)]
+        (j/set-parameter
+          (second value)
+          ^PreparedStatement stmt
+          ^Integer (-> value first inc)))
+      (let [^ResultSet resultset (.executeQuery ^PreparedStatement stmt)]
+        (apply
+          (partial result-seq resultset)
+          columns)))))
+
+(defn execute
   ([tx ^String query]
-   (execute-query tx query []))
+   (execute tx query []))
   ([tx ^String query values]
    (with-open [stmt (let [^Connection c (:connection tx)] (.prepareStatement c query))]
      (doseq [value (map-indexed vector values)]
@@ -209,9 +251,16 @@
   (let [query (str "INSERT INTO " qualified-table
                    "(" (->> columns (map sql-identifier) (str/join ", ")) ")"
                    " VALUES (" (->> columns (map (constantly "?")) (str/join ", ")) ")")]
-    (execute-query tx query values)))
+    (execute tx query values)))
 
 (defn table-exists? [tx schema table]
   (let [query "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ?"
         results (j/query tx [query schema table])]
     (not (nil? (first results)))))
+
+
+(defn select
+  ([tx query columns]
+   (select tx query columns []))
+  ([tx query columns values]
+   (execute-query tx query columns values)))

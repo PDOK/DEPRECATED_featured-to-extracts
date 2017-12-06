@@ -8,8 +8,8 @@
   (:import [java.io ByteArrayInputStream])
   )
 
-(def test-db config/test-db)
-(def schema (:schema test-db))
+(def test-db config/db)
+(def schema config/extract-schema)
 (def dataset "performance-set")
 (def extract-type "gml")
 
@@ -50,7 +50,7 @@
        #'core/*add-metadata-extract-records* (constantly nil)
        #'core/*initialized-collection?* (constantly true)}
       (with-open [in (io/input-stream (.getFile (clojure.java.io/resource file)))]
-        (let [result (core/update-extracts dataset '("gml") in true)]
+        (let [result (core/update-extracts dataset '("gml") {} in true)]
           (println result)
           )))) )
 

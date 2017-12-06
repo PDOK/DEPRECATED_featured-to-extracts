@@ -1,0 +1,72 @@
+{
+  "_check_validity_on_delete": false,
+  "Features": [
+    {
+      "_action": "new",
+      "_id": "G0353.cf44d351d9da42c5b6e73bfaf09f5b68",
+      "_validity": "2016-04-11T14:53:10.086",
+      "_collection": "Pand",
+      "eindRegistratie": [
+        "~#moment",
+        [
+          "2017-08-16T11:00:41.000"
+        ]
+      ],
+      "terminationDate": [
+        "~#date",
+        null
+      ],
+      "terminationDate_leeg": "geenWaarde",
+      "LV-publicatiedatum": [
+        "~#moment",
+        [
+          "2016-04-11T14:53:10.000"
+        ]
+      ],
+      "lokaalID": "G0353.cf44d351d9da42c5b6e73bfaf09f5b68",
+      "creationDate": [
+        "~#date",
+        [
+          "2010-11-16"
+        ]
+      ],
+      "tijdstipRegistratie": [
+        "~#moment",
+        [
+          "2010-11-16T00:00:00.000"
+        ]
+      ],
+      "bronhouder": "G0353",
+      "relatieveHoogteligging": 0,
+      "aanleveringId": 393322871,
+      "inOnderzoek": null,
+      "inOnderzoek_leeg": "geenWaarde",
+      "status": "bestaand",
+      "status_codeSpace": "http://www.geostandaarden.nl/imgeo/def/2.1#Status",
+      "status_leeg": null,
+      "plus-status": null,
+      "plus-status_codeSpace": "http://www.geostandaarden.nl/imgeo/def/2.1#VoidReasonValue",
+      "plus-status_leeg": "geenWaarde",
+      "_geometry": {
+        "type": "gml",
+        "gml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><gml:MultiSurface xmlns:gml=\"http://www.opengis.net/gml\"><gml:surfaceMember><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList srsDimension=\"2\">131851.488 448985.097 131853.954 448983.572 131855.776 448986.518 131853.309 448988.043 131851.488 448985.097</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:MultiSurface>"
+      },
+      "identificatieBAGPND": "0353100000005424",
+      "nummeraanduidingreeks": [
+        {
+          "reden_leeg": "waardeOnbekend",
+          "identificatieBAGVBOHoogsteHuisnummer": null,
+          "identificatieBAGVBOHoogsteHuisnummer_leeg": null,
+          "identificatieBAGVBOLaagsteHuisnummer": null,
+          "tekst": null
+        }
+
+      ]
+    },
+  {
+      "_action": "delete",
+      "_id": "G0353.cf44d351d9da42c5b6e73bfaf09f5b68",
+      "_collection": "Pand"
+    }
+  ]  
+}

@@ -1,0 +1,128 @@
+{
+  "_check_validity_on_delete": false,
+  "Features": [
+    {
+      "_action": "new",
+      "_id": "G0213.4792bc9944be447b9a3b817c91b3e6e0",
+      "_validity": "2015-06-15T10:22:02.986",
+      "_collection": "Pand",
+      "eindRegistratie": [
+        "~#moment",
+        [
+          "2017-08-16T11:57:21.000"
+        ]
+      ],
+      "terminationDate": [
+        "~#date",
+        null
+      ],
+      "terminationDate_leeg": "geenWaarde",
+      "LV-publicatiedatum": [
+        "~#moment",
+        [
+          "2015-06-15T10:22:02.000"
+        ]
+      ],
+      "lokaalID": "G0213.4792bc9944be447b9a3b817c91b3e6e0",
+      "creationDate": [
+        "~#date",
+        [
+          "2015-05-22"
+        ]
+      ],
+      "tijdstipRegistratie": [
+        "~#moment",
+        [
+          "2015-05-22T09:42:37.000"
+        ]
+      ],
+      "bronhouder": "G0213",
+      "relatieveHoogteligging": 0,
+      "aanleveringId": 137485117,
+      "inOnderzoek": null,
+      "inOnderzoek_leeg": "geenWaarde",
+      "status": "bestaand",
+      "status_codeSpace": "http://www.geostandaarden.nl/imgeo/def/2.1#Status",
+      "status_leeg": null,
+      "plus-status": null,
+      "plus-status_codeSpace": "http://www.geostandaarden.nl/imgeo/def/2.1#VoidReasonValue",
+      "plus-status_leeg": "geenWaarde",
+      "_geometry": {
+        "type": "gml",
+        "gml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><gml:MultiSurface xmlns:gml=\"http://www.opengis.net/gml\"><gml:surfaceMember><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList srsDimension=\"2\">200605.794 457826.304 200611.782 457825.972 200611.940 457829.153 200605.950 457829.447 200605.794 457826.304<\/gml:posList><\/gml:LinearRing><\/gml:exterior><\/gml:Polygon><\/gml:surfaceMember><\/gml:MultiSurface>"
+      },
+      "identificatieBAGPND": "0213100000034239",
+      "nummeraanduidingreeks": [
+        {
+          "reden_leeg": "waardeOnbekend",
+          "identificatieBAGVBOHoogsteHuisnummer": null,
+          "identificatieBAGVBOHoogsteHuisnummer_leeg": null,
+          "identificatieBAGVBOLaagsteHuisnummer": null,
+          "tekst": null,
+          "positie": []
+        }
+      ]
+    },
+    {
+      "_action": "change",
+      "_id": "G0213.0f868fecab1d47a0b328c6c32b767010",
+      "_validity": "2017-08-16T13:01:41.764",
+      "_current_validity": "2015-06-15T10:22:02.986",
+      "_collection": "Pand",
+      "eindRegistratie": [
+        "~#moment",
+        null
+      ],
+      "terminationDate": [
+        "~#date",
+        null
+      ],
+      "terminationDate_leeg": "geenWaarde",
+      "LV-publicatiedatum": [
+        "~#moment",
+        [
+          "2017-08-16T13:01:41.000"
+        ]
+      ],
+      "lokaalID": "G0213.0f868fecab1d47a0b328c6c32b767010",
+      "creationDate": [
+        "~#date",
+        [
+          "2015-05-22"
+        ]
+      ],
+      "tijdstipRegistratie": [
+        "~#moment",
+        [
+          "2017-08-16T11:57:21.000"
+        ]
+      ],
+      "bronhouder": "G0213",
+      "relatieveHoogteligging": 0,
+      "aanleveringId": 1184828577,
+      "inOnderzoek": null,
+      "inOnderzoek_leeg": "geenWaarde",
+      "status": "bestaand",
+      "status_codeSpace": "http://www.geostandaarden.nl/imgeo/def/2.1#Status",
+      "status_leeg": null,
+      "plus-status": null,
+      "plus-status_codeSpace": "http://www.geostandaarden.nl/imgeo/def/2.1#VoidReasonValue",
+      "plus-status_leeg": "geenWaarde",
+      "_geometry": {
+        "type": "gml",
+        "gml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><gml:MultiSurface xmlns:gml=\"http://www.opengis.net/gml\"><gml:surfaceMember><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList srsDimension=\"2\">200624.288 457828.547 200624.116 457825.287 200630.367 457824.941 200630.540 457828.240 200624.288 457828.547<\/gml:posList><\/gml:LinearRing><\/gml:exterior><\/gml:Polygon><\/gml:surfaceMember><\/gml:MultiSurface>"
+      },
+      "identificatieBAGPND": "0213100000034393",
+      "nummeraanduidingreeks": [
+        {
+          "reden_leeg": "waardeOnbekend",
+          "identificatieBAGVBOHoogsteHuisnummer": null,
+          "identificatieBAGVBOHoogsteHuisnummer_leeg": null,
+          "identificatieBAGVBOLaagsteHuisnummer": null,
+          "tekst": null,
+          "positie": []
+        }
+      ]
+    }
+  ]
+}

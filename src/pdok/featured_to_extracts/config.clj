@@ -33,13 +33,12 @@
                 (load-props "plp.properties")))
 
 (def db {:subprotocol "postgresql"
-                  :subname (or (env :database-url) "//localhost:5432/pdok")
-                  :user (or (env :database-user) "postgres")
-                  :password (or (env :database-password) "postgres")
-                  :transaction? true
-                  :schema (or (env :extracts-schema) "extractmanagement")})
+         :subname (or (env :database-url) "//localhost:5432/pdok")
+         :user (or (env :database-user) "postgres")
+         :password (or (env :database-password) "postgres")
+         :transaction? true})
 
-(def test-db db)
+(def extract-schema (or (env :extracts-schema) "extractmanagement"))
 
 (defn create-workers [factory-f]
   (let [n-workers (read-string (or (env :n-workers) "2"))]
