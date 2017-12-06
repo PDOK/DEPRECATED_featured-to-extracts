@@ -209,8 +209,8 @@
 
 (def ^:dynamic *initialized-collection?* m/registered?)
 
-(defn- get-or-allocate-delivery-id [tx dataset {from-date :from-date to-date :to-date}]
-  (let [run (fn [{msg :msg q :q params :params}]
+(defn- get-or-allocate-delivery-id [dataset {from-date :from-date to-date :to-date}]
+  (let [run (fn [tx {msg :msg q :q params :params}]
               (log/info msg)
               (log/debug "query:" q)
               (log/debug "params:" params)
@@ -239,16 +239,42 @@
                      "values(?, ?, ?, ?) "
                      "returning id")
                 :params [dataset from-date to-date (java.util.UUID/randomUUID)]}]
-    (let [delivery-id (run fetch)]
-      (if delivery-id
-        delivery-id
-        (run insert)))))
+    (loop [tx (pg/begin-transaction config/db)
+           attempts-left 4]
+      (let [delivery-id (run tx fetch)]
+        (if delivery-id
+          (do
+            (pg/commit-transaction tx)
+            (pg/close-connection tx)
+            delivery-id)
+          (let [{delivery-id :delivery-id 
+                 exception :exception} (try 
+                                         {:delivery-id (run tx insert)} 
+                                         (catch Exception e {:exception e}))]
+            (if delivery-id
+              (do
+                (pg/commit-transaction tx)
+                (pg/close-connection tx)
+                delivery-id)
+              (do
+                (pg/rollback-transaction tx)
+                (if (zero? attempts-left)
+                  (do
+                    (pg/close-connection tx)
+                    (throw (ex-info
+                             "Failed to get or allocate delivery id"
+                             {:from-date from-date 
+                              :to-date to-date
+                              :exception exception})))
+                  (do
+                    (log/error exception (str "Failed to store delivery info (attempts left: " attempts-left ")"))
+                    (recur tx (dec attempts-left))))))))))))
 
 (defn- process-changes [tx dataset collection delivery-info extract-types delta-types changes]
   (let [batch-size 10000
         parts (partition-all batch-size changes)
         delta-type-names (->> delta-types (keys) (map name) (vector))
-        delivery-id (get-or-allocate-delivery-id tx dataset delivery-info)]
+        delivery-id (get-or-allocate-delivery-id dataset delivery-info)]
     (log/info "Creating extracts for" dataset collection extract-types "and deltas for" delta-type-names)
     (doseq [extract-type extract-types]
       (loop [i 1
@@ -356,7 +382,8 @@
                   (if (= version "pdok-featured-changelog-v3")
                     (map #(assoc % :_tiles (calculate-tiles %)) changes)
                     changes))
-                (pg/commit-transaction tx)))
+                (pg/commit-transaction tx)
+                (pg/close-connection tx)))
             {:status "ok" :collection collection}))))))
 
 (defn- do-update-extracts [template-location dataset extract-type delta-feature-root-tag changelog-file]

@@ -167,9 +167,17 @@
         _ (.setAutoCommit connection false)]
     {:connection connection}))
 
+(defn close-connection [tx]
+  (with-open [connection (j/get-connection tx)]
+    (.close connection)))
+
 (defn commit-transaction [tx]
   (with-open [connection (j/get-connection tx)]
     (.commit connection)))
+
+(defn rollback-transaction [tx]
+  (with-open [connection (j/get-connection tx)]
+    (.rollback connection)))
 
 (defn execute-batch-query [tx ^String query batch]
   (with-open [stmt (let [^Connection c (:connection tx)] (.prepareStatement c query))]
