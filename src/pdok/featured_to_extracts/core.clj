@@ -33,7 +33,7 @@
     [nil nil]
     (let [template-key (template/template-key dataset extract-type feature-type)]
       [nil (map #(vector feature-type (:_version %) (:_tiles %) (*render-template* template-key %)
-                         (:_valid_from %) (:_valid_to %) (:lv-publicatiedatum %)) features)])))
+                         (:_valid_from %) (:_valid_to %) (:LV-publicatiedatum %)) features)])))
 
 (defn- jdbc-insert-extract [tx table entries]
   (when (seq entries)
