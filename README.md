@@ -1,5 +1,7 @@
 # DEPRECATED
 
+see https://github.com/PDOK/featured-tng
+
 # Featured-to-Extracts [![Build Status](https://travis-ci.org/PDOK/featured-to-extracts.svg?branch=master)](https://travis-ci.org/PDOK/featured-to-extracts)
 
 Open-source extract generation software for Featured, developed by Publieke Dienstverlening op de Kaart (PDOK).
